@@ -15,7 +15,7 @@
   color: var(--text-muted);
 }
 
-/* Message area — flat inside the panel */
+/* Message area */
 .chat-log {
   flex: 1;
   min-height: 0;
@@ -77,7 +77,7 @@
   margin: 0;
 }
 
-/* Composer — simple divider, no extra box */
+/* Composer */
 .chat-composer {
   display: flex;
   gap: var(--space-3);

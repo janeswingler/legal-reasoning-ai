@@ -4,7 +4,7 @@
   gap: var(--space-3);
 }
 
-/* Toolbar — wire up buttons in HTML/JS later */
+/* Toolbar */
 .notes-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -45,7 +45,7 @@
   border-color: var(--accent-hover);
 }
 
-/* Note list sidebar (optional layout later) */
+/* Note list sidebar */
 .notes-list {
   list-style: none;
   margin: 0;
@@ -80,7 +80,7 @@
   outline: none;
 }
 
-/* Legal pleading paper template (for "New pleading note" view) */
+/* Legal pleading paper template */
 .pleading-paper {
   flex: 1;
   min-height: 0;

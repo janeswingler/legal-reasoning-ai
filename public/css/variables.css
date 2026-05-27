@@ -2,7 +2,7 @@
   --font-sans: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
   --font-legal: "Times New Roman", Times, serif;
 
-  /* Warm neutrals — panels stand apart from the page */
+  /* Warm neutrals */
   --bg-app: #e4e2dc;
   --bg-panel: #ffffff;
   --bg-inset: #f5f4f1;
@@ -14,7 +14,7 @@
   --text: #1c1b19;
   --text-muted: #6f6a63;
 
-  /* Ink black — not blue, teal, or burgundy */
+  /* Ink black */
   --accent: #1c1b19;
   --accent-hover: #0a0a09;
 

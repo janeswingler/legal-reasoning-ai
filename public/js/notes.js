@@ -1,5 +1,3 @@
-console.log("notes.js loaded");
-
 const panelNotes = document.querySelector(".panel-notes"); // whole notes section, toggle is-pleading here
 const notesEditor = document.getElementById("notesEditor"); // general note textarea
 const pleadingBody = document.getElementById("pleadingBody"); // editable pleading area

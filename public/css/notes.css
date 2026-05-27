@@ -1,0 +1,142 @@
+/* Notes panel */
+
+.panel-notes {
+  gap: var(--space-3);
+}
+
+/* Toolbar — wire up buttons in HTML/JS later */
+.notes-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--border);
+}
+
+.notes-toolbar button {
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.notes-toolbar button:hover {
+  background: var(--bg-app);
+  border-color: var(--text-muted);
+}
+
+.notes-toolbar button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.notes-toolbar button.is-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+.notes-toolbar button.is-primary:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+/* Note list sidebar (optional layout later) */
+.notes-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 8rem;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.notes-list__item {
+  padding: var(--space-2) var(--space-3);
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.notes-list__item:last-child {
+  border-bottom: none;
+}
+
+.notes-list__item:hover,
+.notes-list__item.is-active {
+  background: var(--bg-app);
+}
+
+.notes-list__item.is-active {
+  font-weight: 600;
+}
+
+.notes-editor:focus {
+  outline: none;
+}
+
+/* Legal pleading paper template (for "New pleading note" view) */
+.pleading-paper {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 2.5rem 1fr;
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  font-family: var(--font-legal);
+  font-size: 12pt;
+  line-height: 2;
+}
+
+.pleading-line-numbers {
+  margin: 0;
+  padding: var(--space-4) var(--space-2);
+  list-style: none;
+  text-align: right;
+  color: var(--text-muted);
+  font-size: 10pt;
+  line-height: 2;
+  border-right: 1px solid var(--border);
+  user-select: none;
+}
+
+.pleading-body {
+  margin: 0;
+  padding: var(--space-4);
+  min-height: 100%;
+  outline: none;
+  overflow-y: auto;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent,
+    transparent calc(2em - 1px),
+    var(--border) calc(2em - 1px),
+    var(--border) 2em
+  );
+  background-attachment: local;
+}
+
+.pleading-body:focus {
+  box-shadow: inset 0 0 0 2px rgba(51, 65, 85, 0.15);
+}
+
+/* Hide regular textarea when pleading view is active */
+.panel-notes.is-pleading .notes-editor {
+  display: none;
+}
+
+.panel-notes.is-pleading .pleading-paper {
+  display: grid;
+}
+
+.pleading-paper {
+  display: none;
+}

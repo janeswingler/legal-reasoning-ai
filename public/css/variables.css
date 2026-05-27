@@ -1,0 +1,37 @@
+:root {
+  --font-sans: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
+  --font-legal: "Times New Roman", Times, serif;
+
+  /* Warm neutrals — panels stand apart from the page */
+  --bg-app: #e4e2dc;
+  --bg-panel: #ffffff;
+  --bg-inset: #f5f4f1;
+  --bg-composer: #fafaf8;
+
+  --border: #cfc9bf;
+  --border-strong: #a8a196;
+
+  --text: #1c1b19;
+  --text-muted: #6f6a63;
+
+  /* Ink black — not blue, teal, or burgundy */
+  --accent: #1c1b19;
+  --accent-hover: #0a0a09;
+
+  --bubble-user: #2a2826;
+  --bubble-assistant: #ffffff;
+
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-pill: 999px;
+
+  --shadow-panel: 0 8px 30px rgba(28, 27, 25, 0.1), 0 2px 6px rgba(28, 27, 25, 0.05);
+  --shadow-bubble: 0 2px 8px rgba(28, 27, 25, 0.07);
+  --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+}

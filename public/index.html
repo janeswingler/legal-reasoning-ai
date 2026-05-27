@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Legal Reasoning AI</title>
+
+        <link rel="stylesheet" href="./css/variables.css" />
+        <link rel="stylesheet" href="./css/reset.css" />
+        <link rel="stylesheet" href="./css/layout.css" />
+        <link rel="stylesheet" href="./css/chat.css" />
+        <link rel="stylesheet" href="./css/notes.css" />
+
+    </head>
+    <body>
+        <header class="app-header">
+            <h1>Legal Reasoning AI</h1>
+        </header>
+
+        <main class="app-main">
+            <section class="panel panel-chat" aria-label="Chat panel">
+                <h2 class="panel-chat__label">Chat</h2>
+                <div class="chat-log" id="chatLog">
+                    <div class="message message--assistant">
+                        <span class="message__role">Assistant</span>
+                        <p class="message__text">
+                            Hi, I am your legal AI assistant. Ask a question about your assignment when you are ready.
+                        </p>
+                    </div>
+                </div>
+
+                <form class="chat-composer" id="chatForm">
+                    <label class="sr-only" for="chatInput">Message</label>
+                    <input
+                        id="chatInput"
+                        name="message"
+                        type="text"
+                        autocomplete="off"
+                        placeholder="Type your message…"
+                    />
+                    <button type="submit">Send</button>
+                </form>
+            </section>
+
+            <section class="panel panel-notes" aria-label="Notes panel">
+                <h2>Notes</h2>
+                <textarea class="notes-editor" id="notesEditor"></textarea>
+            </section>
+        </main>
+
+    </body>
+</html>

@@ -93,7 +93,8 @@
   background: var(--bg-panel);
   font-family: var(--font-legal);
   font-size: 12pt;
-  line-height: 2;
+  --pleading-line-height: 32px;
+  line-height: var(--pleading-line-height);
 }
 
 .pleading-line-numbers {
@@ -103,25 +104,32 @@
   text-align: right;
   color: var(--text-muted);
   font-size: 10pt;
-  line-height: 2;
+  padding: 0 var(--space-2);
+  font-size: 10pt;
+  line-height: var(--pleading-line-height, 32px);
   border-right: 1px solid var(--border);
   user-select: none;
 }
 
 .pleading-body {
   margin: 0;
-  padding: var(--space-4);
+  padding: 0 var(--space-4);
+  line-height: var(--pleading-line-height, 32px);
   min-height: 100%;
   outline: none;
   overflow-y: auto;
   background-image: repeating-linear-gradient(
     to bottom,
     transparent,
-    transparent calc(2em - 1px),
-    var(--border) calc(2em - 1px),
-    var(--border) 2em
+    transparent calc(var(--pleading-line-height, 32px) - 1px),
+    var(--border) calc(var(--pleading-line-height, 32px) - 1px),
+    var(--border) var(--pleading-line-height, 32px)
   );
   background-attachment: local;
+}
+
+.pleading-body > * {
+  margin: 0;
 }
 
 .pleading-body:focus {

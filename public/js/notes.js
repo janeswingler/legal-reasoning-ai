@@ -8,6 +8,10 @@ const newPleadingBtn = document.getElementById("newPleadingBtn");
 const saveNoteBtn = document.getElementById("saveNoteBtn");
 const openNoteBtn = document.getElementById("openNoteBtn");
 
+const exportNoteBtn = document.getElementById("exportNoteBtn");
+
+
+
 let currentNoteId = null;
 
 const PARTICIPANT_ID = "demo-participant";
@@ -51,6 +55,13 @@ function setNoteContent(content) {
 function getNoteTitle() {
     const text = getNoteContent().replace(/<[^>]+>/g, "").trim();
     return text.slice(0, 40) || "Untitled";
+}
+
+function getNoteContentAsText() {
+    const content = getNoteContent();
+    const temp = document.createElement("div");
+    temp.innerHTML = content;
+    return temp.textContent || temp.innerText || "";
 }
 
 function clearNote() {
@@ -133,9 +144,33 @@ async function openNote() {
     setNoteContent(note.content || "");
 }
 
+function exportNote() {
+    const text = getNoteContentAsText().trim();
+    if (!text) {
+        alert("Nothing to export");
+        return;
+    }
+    const safeTitle = getNoteTitle().replace(/[^\w\- ]/g, "").trim() || "note";
+    const isPleading = isPleadingMode();
+    const extension = isPleading ? "html" : "txt";
+    const mimeType = isPleading ? "text/html" : "text/plain";
+    const fileContent = isPleading ? getNoteContent() : text;
+    const blob = new Blob([fileContent], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `${safeTitle}.${extension}`;
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
 saveNoteBtn.addEventListener("click", () => {
     saveNote();
 });
 openNoteBtn.addEventListener("click", () => {
     openNote();
+});
+
+exportNoteBtn.addEventListener("click", () => {
+    exportNote();
 });

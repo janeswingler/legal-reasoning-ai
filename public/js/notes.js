@@ -29,12 +29,14 @@ function showPleadingNote() {
 }
 
 newNoteBtn.addEventListener("click", () => {
+    logSystemInteraction({ eventType: "click", elementName: "New Note Button", page: "notes" });
     clearNote();
     showPlainNote();
 });
 
 
 newPleadingBtn.addEventListener("click", () => {
+    logSystemInteraction({ eventType: "click", elementName: "New Pleading Note Button", page: "notes" });
     clearNote();
     showPleadingNote();
 });
@@ -71,6 +73,14 @@ function clearNote() {
 }
 
 async function saveNote() {
+    
+    logSystemInteraction({
+        eventType: "click",
+        elementName: "Save Button",
+        page: "notes",
+        eventProps: { noteType: isPleadingMode() ? "pleading" : "plain" },
+    });
+
     const payload = {
         participantID: PARTICIPANT_ID,
         sessionID: SESSION_ID,
@@ -100,6 +110,9 @@ async function saveNote() {
 }
 
 async function openNote() {
+
+    logSystemInteraction({ eventType: "click", elementName: "Open Button", page: "notes" });
+
     const response = await fetch(
         `/api/notes?participantID=${encodeURIComponent(PARTICIPANT_ID)}`
     );
@@ -145,6 +158,9 @@ async function openNote() {
 }
 
 function exportNote() {
+
+    logSystemInteraction({ eventType: "click", elementName: "Export Button", page: "notes" });
+
     const text = getNoteContentAsText().trim();
     if (!text) {
         alert("Nothing to export");

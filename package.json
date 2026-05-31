@@ -4,7 +4,7 @@
   "description": "Research prototype for a University of San Francisco study. Law students use an AI chatbot to complete weekly legal reasoning assignments.",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js"
   },
   "keywords": [],
   "author": "",

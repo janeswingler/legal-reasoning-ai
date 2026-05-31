@@ -2,6 +2,10 @@ const chatLog = document.getElementById("chatLog")
 const chatForm = document.getElementById("chatForm")
 const chatInput = document.getElementById("chatInput")
 
+const PARTICIPANT_ID = "demo-participant";
+const SESSION_ID = "demo-session";
+const SYSTEM_ID = "legal-reasoning-ai-v1";
+
 function appendMessage(role, text) {
     const messageEl = document.createElement("div"); // creates a message div
     messageEl.classList.add("message", role === "user" ? "message--user" : "message--assistant"); // applies existing css bubble styles to the div, first class is message (always applied), next class applied depends on role
@@ -21,8 +25,8 @@ function appendMessage(role, text) {
 }
 
 // Handle form submit
-chatForm.addEventListener("submit", (event) => { // runs on Send or Enter in the input
-    event.preventDefault(); // prevent browser reload
+chatForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
 
     const text = chatInput.value.trim();
     if (!text) return;
@@ -30,6 +34,27 @@ chatForm.addEventListener("submit", (event) => { // runs on Send or Enter in the
     appendMessage("user", text);
     chatInput.value = "";
 
-    appendMessage("assistant", "Thanks, responses coming soon :) ");
+    try {
+        const response = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                participantID: PARTICIPANT_ID,
+                sessionID: SESSION_ID,
+                systemID: SYSTEM_ID,
+                userInput: text,
+            }),
+        });
+
+        if (!response.ok) {
+            appendMessage("assistant", "Sorry, something went wrong.");
+            return;
+        }
+
+        const exchange = await response.json();
+        appendMessage("assistant", exchange.botResponse);
+    } catch (error) {
+        appendMessage("assistant", "Sorry, something went wrong.");
+    }
 });
 

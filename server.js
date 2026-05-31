@@ -4,6 +4,7 @@ const path = require("path");
 const connectDB = require("./server/config/db.js");
 
 const notesRoutes = require("./server/routes/notes.js");
+const chatRoutes = require("./server/routes/chat.js");
 
 const app = express();
 const PORT = process.env.PORT || 3000
@@ -11,6 +12,7 @@ const PORT = process.env.PORT || 3000
 app.use(express.json());
 
 app.use("/api/notes", notesRoutes);
+app.use("/api/chat", chatRoutes);
 
 app.use(express.static(path.join(__dirname, "public")));
 

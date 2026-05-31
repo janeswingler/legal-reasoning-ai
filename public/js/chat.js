@@ -30,7 +30,7 @@ chatForm.addEventListener("submit", async (event) => {
 
     const text = chatInput.value.trim();
     if (!text) return;
-
+    logSystemInteraction({ eventType: "click", elementName: "Send Button", page: "chat" });
     appendMessage("user", text);
     chatInput.value = "";
 

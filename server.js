@@ -1,0 +1,29 @@
+require("dotenv").config();
+const express = require("express");
+const path = require("path");
+const connectDB = require("./server/config/db.js");
+
+const notesRoutes = require("./server/routes/notes.js");
+
+const app = express();
+const PORT = process.env.PORT || 3000
+
+app.use(express.json());
+
+app.use("/api/notes", notesRoutes);
+
+app.use(express.static(path.join(__dirname, "public")));
+
+app.get("/api/health", (req, res) => {
+    res.json({ok: true});
+});
+
+async function start() {
+    await connectDB();
+
+    app.listen(PORT, () => {
+        console.log(`Server running on http://localhost:${PORT}`);
+    });
+}
+
+start();

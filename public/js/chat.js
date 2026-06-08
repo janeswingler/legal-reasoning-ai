@@ -38,6 +38,7 @@ chatForm.addEventListener("submit", async (event) => {
                 participantID: config.participantID,
                 sessionID: config.sessionID,
                 systemID: config.systemID,
+                assignmentId: config.assignmentId,
                 userInput: text,
             }),
         });

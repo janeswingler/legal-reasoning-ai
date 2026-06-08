@@ -10,7 +10,7 @@ function logSystemInteraction({ eventType, elementName, page, eventProps = {} })
             systemID: config.systemID,
             eventType,
             elementName,
-            eventProps,
+            eventProps: { assignmentId: config.assignmentId, ...eventProps },
             clientTs: new Date(),
             page,
             uiVersion: UI_VERSION,

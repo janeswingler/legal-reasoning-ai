@@ -6,6 +6,10 @@ const router = express.Router();
 router.post("/", async (req, res) => {
     try {
         const { participantID, sessionID, systemID, userInput } = req.body;
+
+        if (!participantID || !sessionID) {
+            return res.status(400).json({ error: "participantID and sessionID required" });
+        }
         if (!userInput || !userInput.trim()) {
             return res.status(400).json({ error: "userInput required" });
         }

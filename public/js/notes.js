@@ -1,192 +1,364 @@
-const panelNotes = document.querySelector(".panel-notes"); // whole notes section, toggle is-pleading here
-const notesEditor = document.getElementById("notesEditor"); // general note textarea
-const pleadingBody = document.getElementById("pleadingBody"); // editable pleading area
+const exportMenu = document.getElementById("exportMenu");
+const exportMenuBtn = document.getElementById("exportMenuBtn");
+const exportMenuList = document.getElementById("exportMenuList");
+const saveStatusEl = document.getElementById("saveStatus");
+const assignmentLabelEl = document.getElementById("assignmentLabel");
+const pleadingLineNumbersEl = document.getElementById("pleadingLineNumbers");
 
-const newNoteBtn = document.getElementById("newNoteBtn");
-const newPleadingBtn = document.getElementById("newPleadingBtn");
+const PLEADING_LINE_HEIGHT = 32;
+const MIN_PLEADING_LINES = 28;
 
-const saveNoteBtn = document.getElementById("saveNoteBtn");
-const openNoteBtn = document.getElementById("openNoteBtn");
+const Font = Quill.import("formats/font");
+Font.whitelist = ["times-new-roman", "arial", "courier"];
+Quill.register(Font, true);
 
-const exportNoteBtn = document.getElementById("exportNoteBtn");
+const SizeStyle = Quill.import("attributors/style/size");
+SizeStyle.whitelist = ["10pt", "12pt", "14pt"];
+Quill.register(SizeStyle, true);
 
+let saveTimer = null;
+let lineNumberTimer = null;
+let isInitializing = true;
 
-
-let currentNoteId = null;
-
-const PARTICIPANT_ID = "demo-participant";
-const SESSION_ID = "demo-session";
-const SYSTEM_ID = "legal-reasoning-ai-v1";
-
-function showPlainNote() {
-    panelNotes.classList.remove("is-pleading");
-    notesEditor.focus();
-}
-
-function showPleadingNote() {
-    panelNotes.classList.add("is-pleading");
-    pleadingBody.focus();
-}
-
-newNoteBtn.addEventListener("click", () => {
-    logSystemInteraction({ eventType: "click", elementName: "New Note Button", page: "notes" });
-    clearNote();
-    showPlainNote();
+const pleadingQuill = new Quill("#pleadingEditor", {
+    theme: "snow",
+    modules: {
+        toolbar: "#pleadingToolbar",
+    },
+    placeholder: "",
 });
 
+function updateLineNumbers() {
+    const editor = pleadingQuill.root;
+    const lineCount = Math.max(
+        MIN_PLEADING_LINES,
+        Math.ceil(editor.scrollHeight / PLEADING_LINE_HEIGHT)
+    );
 
-newPleadingBtn.addEventListener("click", () => {
-    logSystemInteraction({ eventType: "click", elementName: "New Pleading Note Button", page: "notes" });
-    clearNote();
-    showPleadingNote();
-});
+    pleadingLineNumbersEl.innerHTML = "";
+    for (let i = 1; i <= lineCount; i++) {
+        const li = document.createElement("li");
+        li.textContent = String(i);
+        pleadingLineNumbersEl.appendChild(li);
+    }
+}
 
-function isPleadingMode() {
-    return panelNotes.classList.contains("is-pleading");
+function scheduleLineNumberUpdate() {
+    clearTimeout(lineNumberTimer);
+    lineNumberTimer = setTimeout(updateLineNumbers, 50);
+}
+
+assignmentLabelEl.textContent = config.assignmentId;
+
+function setSaveStatus(text) {
+    saveStatusEl.textContent = text;
 }
 
 function getNoteContent() {
-    return isPleadingMode() ? pleadingBody.innerHTML : notesEditor.value;
+    return pleadingQuill.root.innerHTML;
+}
+
+function trimLeadingEmptyParagraphs(html) {
+    const div = document.createElement("div");
+    div.innerHTML = html;
+
+    while (div.firstElementChild) {
+        const first = div.firstElementChild;
+        const isEmptyParagraph =
+            first.tagName === "P" &&
+            !first.textContent.trim() &&
+            (first.innerHTML === "<br>" || first.innerHTML === "");
+
+        if (!isEmptyParagraph) break;
+        if (div.children.length === 1) break;
+        first.remove();
+    }
+
+    return div.innerHTML || "<p><br></p>";
 }
 
 function setNoteContent(content) {
-    notesEditor.value = content;
-    pleadingBody.innerHTML = content;
+    pleadingQuill.root.innerHTML = trimLeadingEmptyParagraphs(content || "<p><br></p>");
+    scheduleLineNumberUpdate();
 }
 
 function getNoteTitle() {
-    const text = getNoteContent().replace(/<[^>]+>/g, "").trim();
-    return text.slice(0, 40) || "Untitled";
+    const text = pleadingQuill.getText().trim();
+    return text.slice(0, 40) || `${config.assignmentId} note`;
 }
 
-function getNoteContentAsText() {
-    const content = getNoteContent();
-    const temp = document.createElement("div");
-    temp.innerHTML = content;
-    return temp.textContent || temp.innerText || "";
+function getSafeExportBasename() {
+    return getNoteTitle().replace(/[^\w\- ]/g, "").trim() || "note";
 }
 
-function clearNote() {
-    currentNoteId = null;
-    notesEditor.value = "";
-    pleadingBody.innerHTML = "";
+function hasNoteContent() {
+    return Boolean(pleadingQuill.getText().trim());
 }
 
-async function saveNote() {
-    
+function requireNoteContent() {
+    if (hasNoteContent()) return true;
+    alert("Nothing to export");
+    return false;
+}
+
+function downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = filename;
+    link.click();
+    URL.revokeObjectURL(url);
+}
+
+function logExport(eventName, format) {
     logSystemInteraction({
         eventType: "click",
-        elementName: "Save Button",
+        elementName: eventName,
         page: "notes",
-        eventProps: { noteType: isPleadingMode() ? "pleading" : "plain" },
+        eventProps: { assignmentId: config.assignmentId, format },
+    });
+}
+
+function prepareHtmlForDocx(html) {
+    const container = document.createElement("div");
+    container.innerHTML = html;
+
+    const fontMap = {
+        "ql-font-times-new-roman": '"Times New Roman", Times, serif',
+        "ql-font-arial": "Arial, Helvetica, sans-serif",
+        "ql-font-courier": '"Courier New", Courier, monospace',
+    };
+
+    container.querySelectorAll("[class*='ql-font-']").forEach((el) => {
+        for (const cls of el.classList) {
+            if (fontMap[cls]) {
+                el.style.fontFamily = fontMap[cls];
+            }
+        }
     });
 
+    container.querySelectorAll("p, li").forEach((el) => {
+        el.style.margin = "0";
+        el.style.lineHeight = "1.33";
+        if (!el.style.fontFamily) {
+            el.style.fontFamily = '"Times New Roman", Times, serif';
+        }
+    });
+
+    return container.innerHTML;
+}
+
+function exportNoteHtml() {
+    if (!requireNoteContent()) return;
+
+    logExport("Export HTML", "html");
+    downloadBlob(
+        new Blob([getNoteContent()], { type: "text/html" }),
+        `${getSafeExportBasename()}.html`
+    );
+}
+
+function exportNotePdf() {
+    if (!requireNoteContent()) return;
+
+    logExport("Export Print PDF", "pdf");
+    window.print();
+}
+
+function exportNoteDocx() {
+    if (!requireNoteContent()) return;
+
+    if (typeof htmlDocx === "undefined") {
+        alert("Word export is unavailable right now. Try HTML export instead.");
+        return;
+    }
+
+    logExport("Export DOCX", "docx");
+
+    const bodyHtml = prepareHtmlForDocx(getNoteContent());
+    const documentHtml =
+        '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>' +
+        bodyHtml +
+        "</body></html>";
+
+    try {
+        const blob = htmlDocx.asBlob(documentHtml);
+        downloadBlob(blob, `${getSafeExportBasename()}.docx`);
+    } catch (error) {
+        alert("Could not create Word document. Try HTML export instead.");
+    }
+}
+
+function setExportMenuOpen(isOpen) {
+    exportMenuBtn.setAttribute("aria-expanded", String(isOpen));
+    exportMenuList.hidden = !isOpen;
+}
+
+function toggleExportMenu() {
+    setExportMenuOpen(exportMenuList.hidden);
+}
+
+function closeExportMenu() {
+    setExportMenuOpen(false);
+}
+
+function handleExportChoice(format) {
+    closeExportMenu();
+
+    if (format === "html") {
+        exportNoteHtml();
+        return;
+    }
+
+    if (format === "pdf") {
+        exportNotePdf();
+        return;
+    }
+
+    if (format === "docx") {
+        exportNoteDocx();
+    }
+}
+
+async function loadTemplateHtml() {
+    const assignmentUrl = `./assets/${config.assignmentId}.html`;
+    let response = await fetch(assignmentUrl);
+
+    if (!response.ok) {
+        response = await fetch("./assets/default.html");
+    }
+
+    if (!response.ok) {
+        throw new Error("Could not load template");
+    }
+
+    return response.text();
+}
+
+async function saveCurrentNote() {
     const payload = {
-        participantID: PARTICIPANT_ID,
-        sessionID: SESSION_ID,
-        systemID: SYSTEM_ID,
-        noteType: isPleadingMode() ? "pleading" : "plain",
+        participantID: config.participantID,
+        assignmentId: config.assignmentId,
+        sessionID: config.sessionID,
+        systemID: config.systemID,
+        noteType: "pleading",
         title: getNoteTitle(),
         content: getNoteContent(),
     };
 
-    const url = currentNoteId ? `/api/notes/${currentNoteId}` : "/api/notes";
-    const method = currentNoteId ? "PUT" : "POST";
-
-    const response = await fetch(url, {
-        method,
+    const response = await fetch("/api/notes/current", {
+        method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
-        alert("Save failed");
+        setSaveStatus("Save failed");
         return;
     }
 
     const saved = await response.json();
-    currentNoteId = saved._id;
-    alert(`Saved (v${saved.version})`);
+    setSaveStatus(`Saved (v${saved.version})`);
 }
 
-async function openNote() {
-
-    logSystemInteraction({ eventType: "click", elementName: "Open Button", page: "notes" });
-
-    const response = await fetch(
-        `/api/notes?participantID=${encodeURIComponent(PARTICIPANT_ID)}`
-    );
-
-    if (!response.ok) {
-        alert("Could not load notes");
-        return;
-    }
-
-    const notes = await response.json();
-
-    if (notes.length === 0) {
-        alert("No saved notes yet");
-        return;
-    }
-
-    const listText = notes
-        .map((note, index) => {
-            const title = note.title || "Untitled";
-            return `${index + 1}. ${title} (${note.noteType}, v${note.version})`;
-        })
-        .join("\n");
-
-    const pick = prompt(`Enter note number:\n\n${listText}`);
-    if (!pick) return;
-
-    const index = Number(pick) - 1;
-    if (Number.isNaN(index) || index < 0 || index >= notes.length) {
-        alert("Invalid choice");
-        return;
-    }
-
-    const note = notes[index];
-    currentNoteId = note._id;
-
-    if (note.noteType === "pleading") {
-        showPleadingNote();
-    } else {
-        showPlainNote();
-    }
-
-    setNoteContent(note.content || "");
+function scheduleSave() {
+    if (isInitializing) return;
+    clearTimeout(saveTimer);
+    setSaveStatus("Saving…");
+    saveTimer = setTimeout(saveCurrentNote, 800);
 }
 
-function exportNote() {
+async function initNote() {
+    setSaveStatus("Loading…");
 
-    logSystemInteraction({ eventType: "click", elementName: "Export Button", page: "notes" });
+    const url =
+        `/api/notes/current?participantID=${encodeURIComponent(config.participantID)}` +
+        `&assignmentId=${encodeURIComponent(config.assignmentId)}`;
 
-    const text = getNoteContentAsText().trim();
-    if (!text) {
-        alert("Nothing to export");
-        return;
+    try {
+        const response = await fetch(url);
+
+        if (response.ok) {
+            const note = await response.json();
+            setNoteContent(note.content || "");
+            setSaveStatus(`Loaded (v${note.version})`);
+            return;
+        }
+
+        if (response.status === 404) {
+            const html = await loadTemplateHtml();
+            setNoteContent(html);
+            setSaveStatus("New document");
+            await saveCurrentNote();
+            return;
+        }
+
+        setSaveStatus("Load failed");
+    } catch (error) {
+        setSaveStatus("Load failed");
+    } finally {
+        isInitializing = false;
+        updateLineNumbers();
     }
-    const safeTitle = getNoteTitle().replace(/[^\w\- ]/g, "").trim() || "note";
-    const isPleading = isPleadingMode();
-    const extension = isPleading ? "html" : "txt";
-    const mimeType = isPleading ? "text/html" : "text/plain";
-    const fileContent = isPleading ? getNoteContent() : text;
-    const blob = new Blob([fileContent], { type: mimeType });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `${safeTitle}.${extension}`;
-    link.click();
-    URL.revokeObjectURL(url);
 }
 
-saveNoteBtn.addEventListener("click", () => {
-    saveNote();
-});
-openNoteBtn.addEventListener("click", () => {
-    openNote();
+exportMenuBtn.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleExportMenu();
 });
 
-exportNoteBtn.addEventListener("click", () => {
-    exportNote();
+exportMenuList.addEventListener("click", (event) => {
+    const item = event.target.closest("[data-export]");
+    if (!item) return;
+    handleExportChoice(item.dataset.export);
+});
+
+document.addEventListener("click", (event) => {
+    if (!exportMenu.contains(event.target)) {
+        closeExportMenu();
+    }
+});
+
+document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+        closeExportMenu();
+    }
+});
+
+initNote();
+
+pleadingQuill.on("text-change", () => {
+    scheduleSave();
+    scheduleLineNumberUpdate();
+});
+
+updateLineNumbers();
+
+pleadingQuill.on("selection-change", (range) => {
+    if (range && range.length > 0) {
+        logSystemInteraction({
+            eventType: "quill-highlight",
+            elementName: "pleading-editor",
+            page: "notes",
+            eventProps: { assignmentId: config.assignmentId },
+        });
+    }
+});
+
+pleadingQuill.root.addEventListener("paste", () => {
+    logSystemInteraction({
+        eventType: "paste",
+        elementName: "pleading-editor",
+        page: "notes",
+        eventProps: { assignmentId: config.assignmentId },
+    });
+});
+
+pleadingQuill.root.addEventListener("copy", () => {
+    logSystemInteraction({
+        eventType: "copy",
+        elementName: "pleading-editor",
+        page: "notes",
+        eventProps: { assignmentId: config.assignmentId },
+    });
 });

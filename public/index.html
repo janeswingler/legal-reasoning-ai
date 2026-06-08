@@ -10,6 +10,7 @@
         <link rel="stylesheet" href="./css/layout.css" />
         <link rel="stylesheet" href="./css/chat.css" />
         <link rel="stylesheet" href="./css/notes.css" />
+        <link href="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.snow.css" rel="stylesheet" />
 
     </head>
     <body>
@@ -42,52 +43,85 @@
                 </form>
             </section>
 
-            <section class="panel panel-notes" aria-label="Notes panel">
-                <h2 class="panel-notes__label">Notes</h2>
+            <section class="panel panel-notes is-pleading" aria-label="Notes panel">
+                <h2 class="panel-notes__label">Assignment Notes</h2>
                 <div class="notes-toolbar">
-                    <button type="button" id="newNoteBtn">New Note</button>
-                    <button type="button" id="newPleadingBtn">New Pleading Note</button>
-                    <button type="button" id="saveNoteBtn" class="is-primary">Save</button>
-                    <button type="button" id="openNoteBtn">Open</button>
-                    <button type="button" id="exportNoteBtn">Export</button>
+                    <div class="notes-toolbar__meta">
+                        <span class="notes-toolbar__assignment" id="assignmentLabel"></span>
+                        <span class="save-status" id="saveStatus">Loading…</span>
+                        <div class="export-menu" id="exportMenu">
+                            <button
+                                type="button"
+                                id="exportMenuBtn"
+                                class="export-menu__trigger"
+                                aria-haspopup="menu"
+                                aria-expanded="false"
+                                aria-controls="exportMenuList"
+                            >
+                                Export
+                            </button>
+                            <ul class="export-menu__list" id="exportMenuList" role="menu" hidden>
+                                <li role="none">
+                                    <button type="button" role="menuitem" data-export="html">HTML</button>
+                                </li>
+                                <li role="none">
+                                    <button type="button" role="menuitem" data-export="pdf">
+                                        Print / Save as PDF
+                                    </button>
+                                </li>
+                                <li role="none">
+                                    <button type="button" role="menuitem" data-export="docx">Word (.docx)</button>
+                                </li>
+                            </ul>
+                        </div>
+                    </div>
+                    <div
+                        id="pleadingToolbar"
+                        class="pleading-format-toolbar ql-toolbar ql-snow"
+                        aria-label="Text formatting"
+                    >
+                        <span class="ql-formats">
+                            <select class="ql-font" aria-label="Font">
+                                <option value="times-new-roman" selected>Times New Roman</option>
+                                <option value="arial">Arial</option>
+                                <option value="courier">Courier</option>
+                            </select>
+                            <select class="ql-size" aria-label="Font size">
+                                <option value="10pt">10 pt</option>
+                                <option value="12pt" selected>12 pt</option>
+                                <option value="14pt">14 pt</option>
+                            </select>
+                        </span>
+                        <span class="ql-formats">
+                            <button type="button" class="ql-bold" aria-label="Bold"></button>
+                            <button type="button" class="ql-italic" aria-label="Italic"></button>
+                            <button type="button" class="ql-underline" aria-label="Underline"></button>
+                        </span>
+                        <span class="ql-formats">
+                            <button type="button" class="ql-list" value="ordered" aria-label="Numbered list"></button>
+                            <button type="button" class="ql-list" value="bullet" aria-label="Bullet list"></button>
+                        </span>
+                        <span class="ql-formats">
+                            <button type="button" class="ql-clean" aria-label="Clear formatting"></button>
+                        </span>
+                    </div>
                 </div>
 
-                <textarea class="notes-editor" id="notesEditor"></textarea>
                 <div class="pleading-paper" id="pleadingPaper">
-                    <ol class="pleading-line-numbers" aria-hidden="true">
-                        <li>1</li>
-                        <li>2</li>
-                        <li>3</li>
-                        <li>4</li>
-                        <li>5</li>
-                        <li>6</li>
-                        <li>7</li>
-                        <li>8</li>
-                        <li>9</li>
-                        <li>10</li>
-                        <li>11</li>
-                        <li>12</li>
-                        <li>13</li>
-                        <li>14</li>
-                        <li>15</li>
-                        <li>16</li>
-                        <li>17</li>
-                        <li>18</li>
-                        <li>19</li>
-                        <li>20</li>
-                        <li>21</li>
-                        <li>22</li>
-                        <li>23</li>
-                        <li>24</li>
-                        <li>25</li>
-                        <li>26</li>
-                        <li>27</li>
-                        <li>28</li>
-                    </ol>
-                    <div class="pleading-body" id="pleadingBody" contenteditable="true" role="textbox" aria-label="Pleading note body"></div>
+                    <div class="pleading-scroll" id="pleadingScroll">
+                        <ol class="pleading-line-numbers" id="pleadingLineNumbers" aria-hidden="true"></ol>
+                        <div class="pleading-content">
+                            <div class="pleading-editor-wrap">
+                                <div id="pleadingEditor" aria-label="Pleading note body"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
         </main>
+        <script src="https://cdn.jsdelivr.net/npm/quill@1.3.7/dist/quill.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/html-docx-js@0.3.1/dist/html-docx.js"></script>
+        <script src="./js/config.js"></script>
         <script src="./js/logging.js"></script>
         <script src="./js/chat.js"></script>
         <script src="./js/notes.js"></script>

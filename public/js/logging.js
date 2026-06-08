@@ -1,6 +1,3 @@
-const PARTICIPANT_ID = "demo-participant";
-const SESSION_ID = "demo-session";
-const SYSTEM_ID = "legal-reasoning-ai-v1";
 const UI_VERSION = "v1";
 
 function logSystemInteraction({ eventType, elementName, page, eventProps = {} }) {
@@ -8,9 +5,9 @@ function logSystemInteraction({ eventType, elementName, page, eventProps = {} })
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            participantID: PARTICIPANT_ID,
-            sessionID: SESSION_ID,
-            systemID: SYSTEM_ID,
+            participantID: config.participantID,
+            sessionID: config.sessionID,
+            systemID: config.systemID,
             eventType,
             elementName,
             eventProps,

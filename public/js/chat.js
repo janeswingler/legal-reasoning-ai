@@ -2,10 +2,6 @@ const chatLog = document.getElementById("chatLog")
 const chatForm = document.getElementById("chatForm")
 const chatInput = document.getElementById("chatInput")
 
-const PARTICIPANT_ID = "demo-participant";
-const SESSION_ID = "demo-session";
-const SYSTEM_ID = "legal-reasoning-ai-v1";
-
 function appendMessage(role, text) {
     const messageEl = document.createElement("div"); // creates a message div
     messageEl.classList.add("message", role === "user" ? "message--user" : "message--assistant"); // applies existing css bubble styles to the div, first class is message (always applied), next class applied depends on role
@@ -39,9 +35,9 @@ chatForm.addEventListener("submit", async (event) => {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                participantID: PARTICIPANT_ID,
-                sessionID: SESSION_ID,
-                systemID: SYSTEM_ID,
+                participantID: config.participantID,
+                sessionID: config.sessionID,
+                systemID: config.systemID,
                 userInput: text,
             }),
         });

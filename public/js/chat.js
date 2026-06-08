@@ -59,12 +59,44 @@ function appendMessage(role, text) {
     chatLog.scrollTop = chatLog.scrollHeight;
 }
 
+let typingIndicatorEl = null;
+
+function showTypingIndicator() {
+    hideTypingIndicator();
+
+    typingIndicatorEl = document.createElement("div");
+    typingIndicatorEl.className = "message message--assistant message--typing";
+    typingIndicatorEl.setAttribute("aria-live", "polite");
+    typingIndicatorEl.setAttribute("aria-label", "Assistant is typing");
+
+    const roleEl = document.createElement("span");
+    roleEl.className = "message__role";
+    roleEl.textContent = "Assistant";
+
+    const dotsEl = document.createElement("div");
+    dotsEl.className = "typing-indicator";
+    dotsEl.innerHTML = "<span></span><span></span><span></span>";
+
+    typingIndicatorEl.appendChild(roleEl);
+    typingIndicatorEl.appendChild(dotsEl);
+    chatLog.appendChild(typingIndicatorEl);
+    chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+function hideTypingIndicator() {
+    if (typingIndicatorEl) {
+        typingIndicatorEl.remove();
+        typingIndicatorEl = null;
+    }
+}
+
 function showWelcomeMessage() {
     chatLog.innerHTML = "";
     appendMessage("assistant", WELCOME_MESSAGE);
 }
 
 function clearChatLog() {
+    hideTypingIndicator();
     chatLog.innerHTML = "";
 }
 
@@ -207,10 +239,15 @@ chatForm.addEventListener("submit", async (event) => {
 
     logSystemInteraction({ eventType: "click", elementName: "Send Button", page: "chat" });
 
+    const sendBtn = chatForm.querySelector('button[type="submit"]');
+    sendBtn.disabled = true;
+    chatInput.disabled = true;
+
     try {
         const chatSessionId = await ensureChatSession();
         appendMessage("user", text);
         chatInput.value = "";
+        showTypingIndicator();
 
         const response = await fetch("/api/chat", {
             method: "POST",
@@ -225,8 +262,14 @@ chatForm.addEventListener("submit", async (event) => {
             }),
         });
 
+        hideTypingIndicator();
+
         if (!response.ok) {
-            appendMessage("assistant", "Sorry, something went wrong.");
+            let errorText = "Sorry, something went wrong.";
+            if (response.status === 503) {
+                errorText = "Chat is not configured yet. Please contact the study administrator.";
+            }
+            appendMessage("assistant", errorText);
             return;
         }
 
@@ -234,7 +277,12 @@ chatForm.addEventListener("submit", async (event) => {
         appendMessage("assistant", exchange.botResponse);
         await loadSessions();
     } catch (error) {
+        hideTypingIndicator();
         appendMessage("assistant", "Sorry, something went wrong.");
+    } finally {
+        sendBtn.disabled = false;
+        chatInput.disabled = false;
+        chatInput.focus();
     }
 });
 

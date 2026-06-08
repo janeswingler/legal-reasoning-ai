@@ -2,8 +2,10 @@ const express = require("express");
 const mongoose = require("mongoose");
 const ChatExchange = require("../models/ChatExchanges.js");
 const ChatSession = require("../models/ChatSession.js");
+const { getChatCompletion, generateSessionTitle } = require("../services/openai.js");
 
 const router = express.Router();
+const HISTORY_LIMIT = 10;
 
 function requireParticipantAssignment(req, res) {
     const participantID = req.query.participantID || req.body.participantID;
@@ -116,7 +118,33 @@ router.post("/", async (req, res) => {
             return res.status(404).json({ error: "Chat session not found" });
         }
 
-        const botResponse = "Thanks, responses coming soon :) ";
+        const priorExchanges = await ChatExchange.find({
+            chatSessionId: chatSession._id,
+        })
+            .sort({ timestamp: -1 })
+            .limit(HISTORY_LIMIT);
+
+        priorExchanges.reverse();
+
+        let botResponse;
+        try {
+            botResponse = await getChatCompletion(
+                priorExchanges,
+                assignmentId,
+                userInput.trim()
+            );
+        } catch (error) {
+            if (error.message === "OPENAI_API_KEY is not configured") {
+                return res.status(503).json({ error: "Chat service is not configured" });
+            }
+            console.error("OpenAI chat error:", error);
+            return res.status(502).json({ error: "Could not generate a response" });
+        }
+
+        if (!botResponse) {
+            return res.status(502).json({ error: "Could not generate a response" });
+        }
+
         const exchange = await ChatExchange.create({
             participantID,
             sessionID,
@@ -127,10 +155,25 @@ router.post("/", async (req, res) => {
             botResponse,
         });
 
+        const exchangeCount = priorExchanges.length + 1;
+        if (exchangeCount === 1) {
+            try {
+                const newTitle = await generateSessionTitle(userInput.trim(), botResponse);
+                if (newTitle) {
+                    chatSession.title = newTitle.replace(/^["']|["']$/g, "");
+                }
+            } catch (error) {
+                console.error("OpenAI title error:", error);
+            }
+        }
+
         chatSession.updatedAt = new Date();
         await chatSession.save();
 
-        res.status(201).json(exchange);
+        res.status(201).json({
+            ...exchange.toObject(),
+            sessionTitle: chatSession.title,
+        });
     } catch (error) {
         res.status(400).json({ error: error.message });
     }

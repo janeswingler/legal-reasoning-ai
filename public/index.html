@@ -21,26 +21,38 @@
         <main class="app-main">
             <section class="panel panel-chat" aria-label="Chat panel">
                 <h2 class="panel-chat__label">Chat</h2>
-                <div class="chat-log" id="chatLog">
-                    <div class="message message--assistant">
-                        <span class="message__role">Assistant</span>
-                        <p class="message__text">
-                            Hi, I am your legal AI assistant. Ask a question about your assignment when you are ready.
-                        </p>
+                <div class="chat-layout">
+                    <aside class="chat-sidebar" aria-label="Chat sessions">
+                        <button type="button" class="chat-sidebar__new" id="newChatBtn">
+                            <span class="chat-sidebar__new-icon" aria-hidden="true">
+                                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                                    <path
+                                        d="M8 3.5v9M3.5 8h9"
+                                        stroke="currentColor"
+                                        stroke-width="1.5"
+                                        stroke-linecap="round"
+                                    />
+                                </svg>
+                            </span>
+                            New chat
+                        </button>
+                        <ul class="chat-sidebar__list" id="chatSessionList"></ul>
+                    </aside>
+                    <div class="chat-main">
+                        <div class="chat-log" id="chatLog"></div>
+                        <form class="chat-composer" id="chatForm">
+                            <label class="sr-only" for="chatInput">Message</label>
+                            <input
+                                id="chatInput"
+                                name="message"
+                                type="text"
+                                autocomplete="off"
+                                placeholder="Type your message…"
+                            />
+                            <button type="submit">Send</button>
+                        </form>
                     </div>
                 </div>
-
-                <form class="chat-composer" id="chatForm">
-                    <label class="sr-only" for="chatInput">Message</label>
-                    <input
-                        id="chatInput"
-                        name="message"
-                        type="text"
-                        autocomplete="off"
-                        placeholder="Type your message…"
-                    />
-                    <button type="submit">Send</button>
-                </form>
             </section>
 
             <section class="panel panel-notes is-pleading" aria-label="Notes panel">

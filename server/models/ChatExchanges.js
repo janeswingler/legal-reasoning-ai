@@ -9,6 +9,19 @@ const ChatExchangeSchema = new Schema({
     systemID: { type: String },
     userInput: { type: String },
     botResponse: { type: String },
+    retrievedChunkIds: [{ type: Schema.Types.ObjectId, ref: "DocumentChunk" }],
+    retrievalMeta: {
+        ragVersion: { type: String, default: null },
+        chunkCount: { type: Number, default: 0 },
+        scores: [
+            {
+                chunkId: { type: Schema.Types.ObjectId, ref: "DocumentChunk" },
+                bm25Score: { type: Number, default: null },
+                denseScore: { type: Number, default: null },
+                combinedScore: { type: Number, default: null },
+            },
+        ],
+    },
     timestamp: { type: Date, default: Date.now },
 });
 

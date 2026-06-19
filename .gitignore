@@ -8,4 +8,6 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 
+uploads/
 test-db.js
+public/assets/*.docx

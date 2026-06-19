@@ -3,9 +3,16 @@ const mongoose = require("mongoose");
 const ChatExchange = require("../models/ChatExchanges.js");
 const ChatSession = require("../models/ChatSession.js");
 const { getChatCompletion, generateSessionTitle } = require("../services/openai.js");
+const {
+    retrieveWithMeta,
+    formatRetrievedContext,
+} = require("../services/retrieval.js");
+const attachmentsRouter = require("./attachments.js");
 
 const router = express.Router();
 const HISTORY_LIMIT = 10;
+
+router.use("/sessions/:chatSessionId/attachments", attachmentsRouter);
 
 function requireParticipantAssignment(req, res) {
     const participantID = req.query.participantID || req.body.participantID;
@@ -126,12 +133,25 @@ router.post("/", async (req, res) => {
 
         priorExchanges.reverse();
 
+        let retrievedContext = "";
+        let retrievalResult = { chunks: [], scores: [], ragVersion: null };
+        try {
+            retrievalResult = await retrieveWithMeta(
+                chatSession._id,
+                userInput.trim()
+            );
+            retrievedContext = formatRetrievedContext(retrievalResult.chunks);
+        } catch (error) {
+            console.error("Retrieval error:", error);
+        }
+
         let botResponse;
         try {
             botResponse = await getChatCompletion(
                 priorExchanges,
                 assignmentId,
-                userInput.trim()
+                userInput.trim(),
+                retrievedContext
             );
         } catch (error) {
             if (error.message === "OPENAI_API_KEY is not configured") {
@@ -153,6 +173,12 @@ router.post("/", async (req, res) => {
             systemID,
             userInput: userInput.trim(),
             botResponse,
+            retrievedChunkIds: retrievalResult.chunks.map((chunk) => chunk._id),
+            retrievalMeta: {
+                ragVersion: retrievalResult.ragVersion,
+                chunkCount: retrievalResult.chunks.length,
+                scores: retrievalResult.scores,
+            },
         });
 
         const exchangeCount = priorExchanges.length + 1;

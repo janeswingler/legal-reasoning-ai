@@ -3,6 +3,10 @@ const chatForm = document.getElementById("chatForm");
 const chatInput = document.getElementById("chatInput");
 const chatSessionList = document.getElementById("chatSessionList");
 const newChatBtn = document.getElementById("newChatBtn");
+const chatAttachmentsEl = document.getElementById("chatAttachments");
+const chatAttachmentList = document.getElementById("chatAttachmentList");
+const attachFileBtn = document.getElementById("attachFileBtn");
+const chatFileInput = document.getElementById("chatFileInput");
 
 const WELCOME_MESSAGE =
     "Hi, I am your legal AI assistant. Ask a question about your assignment when you are ready.";
@@ -159,11 +163,125 @@ async function loadConversationHistory(chatSessionId) {
     renderHistory(exchanges);
 }
 
+async function loadAttachments() {
+    chatAttachmentList.innerHTML = "";
+
+    if (!currentChatSessionId) {
+        chatAttachmentsEl.hidden = true;
+        return;
+    }
+
+    const response = await fetch(
+        `/api/chat/sessions/${encodeURIComponent(currentChatSessionId)}/attachments?${sessionQuery()}`
+    );
+
+    if (!response.ok) {
+        chatAttachmentsEl.hidden = true;
+        return;
+    }
+
+    const { attachments } = await response.json();
+
+    if (!attachments.length) {
+        chatAttachmentsEl.hidden = true;
+        return;
+    }
+
+    chatAttachmentsEl.hidden = false;
+
+    attachments.forEach((attachment) => {
+        const item = document.createElement("li");
+        item.className = "chat-attachment-chip";
+
+        const name = document.createElement("span");
+        name.className = "chat-attachment-chip__name";
+        name.textContent = attachment.originalFilename;
+        name.title = attachment.originalFilename;
+
+        const status = document.createElement("span");
+        status.className = "chat-attachment-chip__status";
+        if (attachment.status === "processing") {
+            status.textContent = "Processing…";
+        } else if (attachment.status === "failed") {
+            status.textContent = "Failed";
+        } else {
+            status.textContent = `${attachment.chunkCount} sections`;
+        }
+
+        const removeBtn = document.createElement("button");
+        removeBtn.type = "button";
+        removeBtn.className = "chat-attachment-chip__remove";
+        removeBtn.setAttribute("aria-label", `Remove ${attachment.originalFilename}`);
+        removeBtn.textContent = "×";
+        removeBtn.addEventListener("click", () => deleteAttachment(attachment._id));
+
+        item.appendChild(name);
+        item.appendChild(status);
+        item.appendChild(removeBtn);
+        chatAttachmentList.appendChild(item);
+    });
+}
+
+async function deleteAttachment(attachmentId) {
+    if (!currentChatSessionId) return;
+
+    const response = await fetch(
+        `/api/chat/sessions/${encodeURIComponent(currentChatSessionId)}/attachments/${encodeURIComponent(attachmentId)}?${sessionQuery()}`,
+        { method: "DELETE" }
+    );
+
+    if (!response.ok) {
+        alert("Could not remove attachment");
+        return;
+    }
+
+    await loadAttachments();
+}
+
+async function uploadAttachment(file) {
+    const chatSessionId = await ensureChatSession();
+    const formData = new FormData();
+    formData.append("file", file);
+    formData.append("participantID", config.participantID);
+    formData.append("assignmentId", config.assignmentId);
+
+    attachFileBtn.disabled = true;
+
+    try {
+        const response = await fetch(
+            `/api/chat/sessions/${encodeURIComponent(chatSessionId)}/attachments?${sessionQuery()}`,
+            {
+                method: "POST",
+                body: formData,
+            }
+        );
+
+        if (!response.ok) {
+            const error = await response.json().catch(() => ({}));
+            alert(error.error || "Could not upload PDF");
+            return;
+        }
+
+        logSystemInteraction({
+            eventType: "upload",
+            elementName: "Chat PDF Attachment",
+            page: "chat",
+            eventProps: { filename: file.name },
+        });
+
+        await loadAttachments();
+    } finally {
+        attachFileBtn.disabled = false;
+        chatFileInput.value = "";
+    }
+}
+
 async function selectSession(chatSessionId) {
     currentChatSessionId = chatSessionId;
     setStoredChatSessionId(chatSessionId);
     setActiveSessionItem(chatSessionId);
     await loadConversationHistory(chatSessionId);
+    await loadAttachments();
 }
 
 async function createChatSession() {
@@ -196,6 +314,8 @@ function startNewChat() {
     currentChatSessionId = null;
     setStoredChatSessionId(null);
     showWelcomeMessage();
+    chatAttachmentsEl.hidden = true;
+    chatAttachmentList.innerHTML = "";
     chatSessionList.querySelectorAll(".chat-sidebar__item").forEach((item) => {
         item.classList.remove("is-active");
     });
@@ -287,6 +407,16 @@ chatForm.addEventListener("submit", async (event) => {
 });
 
 newChatBtn.addEventListener("click", startNewChat);
+
+attachFileBtn.addEventListener("click", () => {
+    chatFileInput.click();
+});
+
+chatFileInput.addEventListener("change", async () => {
+    const file = chatFileInput.files?.[0];
+    if (!file) return;
+    await uploadAttachment(file);
+});
 
 showWelcomeMessage();
 initChat();

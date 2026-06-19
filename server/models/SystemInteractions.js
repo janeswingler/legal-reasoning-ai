@@ -5,11 +5,11 @@ const SystemInteractionSchema = new Schema({
     participantID: { type: String },
     systemID: { type: String },
     sessionID: { type: String },
-    eventType: { type: String },       // "click", "focus", etc.
-    elementName: { type: String },     // "Save Button", "Send Button"
+    eventType: { type: String },
+    elementName: { type: String },
     eventProps: { type: Schema.Types.Mixed },
     clientTs: { type: Date },
-    page: { type: String },            // "notes" or "chat"
+    page: { type: String },
     uiVersion: { type: String },
     timestamp: { type: Date, default: Date.now }
 });

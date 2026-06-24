@@ -45,6 +45,16 @@ function sessionQuery() {
     );
 }
 
+function renderAssistantHtml(text) {
+    if (typeof marked !== "undefined" && typeof marked.parse === "function") {
+        return marked.parse(text, { breaks: true, gfm: true });
+    }
+
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML.replace(/\n/g, "<br>");
+}
+
 function appendMessage(role, text) {
     const messageEl = document.createElement("div");
     messageEl.classList.add("message", role === "user" ? "message--user" : "message--assistant");
@@ -53,9 +63,14 @@ function appendMessage(role, text) {
     roleEl.classList.add("message__role");
     roleEl.textContent = role === "user" ? "You" : "Assistant";
 
-    const textEl = document.createElement("p");
+    const textEl = document.createElement("div");
     textEl.classList.add("message__text");
-    textEl.textContent = text;
+
+    if (role === "assistant") {
+        textEl.innerHTML = renderAssistantHtml(text);
+    } else {
+        textEl.textContent = text;
+    }
 
     messageEl.appendChild(roleEl);
     messageEl.appendChild(textEl);

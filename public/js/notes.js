@@ -3,87 +3,114 @@ const exportMenuBtn = document.getElementById("exportMenuBtn");
 const exportMenuList = document.getElementById("exportMenuList");
 const saveStatusEl = document.getElementById("saveStatus");
 const assignmentLabelEl = document.getElementById("assignmentLabel");
-const pleadingLineNumbersEl = document.getElementById("pleadingLineNumbers");
+const noteEditorEl = document.getElementById("noteEditor");
+const pleadingBackdropEl = document.getElementById("pleadingBackdrop");
+const pleadingScrollSurfaceEl = document.getElementById("pleadingScrollSurface");
+const pleadingPaperEl = document.getElementById("pleadingPaper");
 
-const PLEADING_LINE_HEIGHT = 32;
-const MIN_PLEADING_LINES = 28;
+const pleadingSpec = PleadingLayoutSpec.default();
+pleadingSpec.applyCssVariables(pleadingPaperEl);
+
+let pleadingEditor = null;
 
 const Font = Quill.import("formats/font");
-Font.whitelist = ["times-new-roman", "arial", "courier"];
+Font.whitelist = ["times-new-roman"];
 Quill.register(Font, true);
 
 const SizeStyle = Quill.import("attributors/style/size");
-SizeStyle.whitelist = ["10pt", "12pt", "14pt"];
+SizeStyle.whitelist = ["12pt"];
 Quill.register(SizeStyle, true);
 
 let saveTimer = null;
-let lineNumberTimer = null;
 let isInitializing = true;
+let layoutFrameId = null;
 
-const pleadingQuill = new Quill("#pleadingEditor", {
+assignmentLabelEl.textContent = config.assignmentId;
+
+const quill = new Quill(noteEditorEl, {
     theme: "snow",
     modules: {
-        toolbar: "#pleadingToolbar",
+        toolbar: "#noteToolbar",
     },
     placeholder: "",
 });
 
-function updateLineNumbers() {
-    const editor = pleadingQuill.root;
-    const lineCount = Math.max(
-        MIN_PLEADING_LINES,
-        Math.ceil(editor.scrollHeight / PLEADING_LINE_HEIGHT)
-    );
-
-    pleadingLineNumbersEl.innerHTML = "";
-    for (let i = 1; i <= lineCount; i++) {
-        const li = document.createElement("li");
-        li.textContent = String(i);
-        pleadingLineNumbersEl.appendChild(li);
-    }
-}
-
-function scheduleLineNumberUpdate() {
-    clearTimeout(lineNumberTimer);
-    lineNumberTimer = setTimeout(updateLineNumbers, 50);
-}
-
-assignmentLabelEl.textContent = config.assignmentId;
+pleadingEditor = new PleadingEditorChrome(pleadingSpec, {
+    backdropEl: pleadingBackdropEl,
+    scrollSurfaceEl: pleadingScrollSurfaceEl,
+    editorEl: quill.root,
+});
 
 function setSaveStatus(text) {
     saveStatusEl.textContent = text;
 }
 
-function getNoteContent() {
-    return pleadingQuill.root.innerHTML;
+function getEditorHtml() {
+    return quill.root.innerHTML;
 }
 
-function trimLeadingEmptyParagraphs(html) {
-    const div = document.createElement("div");
-    div.innerHTML = html;
+function setEditorHtml(html) {
+    quill.root.style.minHeight = "";
+    pleadingScrollSurfaceEl.style.minHeight = "";
+    quill.root.innerHTML = html || "<p><br></p>";
+    quill.format("font", "times-new-roman", "silent");
+    quill.format("size", "12pt", "silent");
+    schedulePleadingLayout();
+}
 
-    while (div.firstElementChild) {
-        const first = div.firstElementChild;
-        const isEmptyParagraph =
-            first.tagName === "P" &&
-            !first.textContent.trim() &&
-            (first.innerHTML === "<br>" || first.innerHTML === "");
+function isEmptyBlock(el) {
+    const text = el.textContent.replace(/\u200b/gi, "").trim();
+    return text === "" && !el.querySelector("img, table, ul, ol");
+}
 
-        if (!isEmptyParagraph) break;
-        if (div.children.length === 1) break;
-        first.remove();
+function normalizePleadingHtml(html) {
+    const container = document.createElement("div");
+    container.innerHTML = html || "<p><br></p>";
+
+    const blocks = Array.from(container.children);
+    if (blocks.length === 0) {
+        return "<p><br></p>";
     }
 
-    return div.innerHTML || "<p><br></p>";
+    const hasText = container.textContent.replace(/\u200b/gi, "").trim().length > 0;
+    if (!hasText && blocks.every(isEmptyBlock)) {
+        return "<p><br></p>";
+    }
+
+    return container.innerHTML;
 }
 
-function setNoteContent(content) {
-    pleadingQuill.root.innerHTML = trimLeadingEmptyParagraphs(content || "<p><br></p>");
-    scheduleLineNumberUpdate();
+function parseNoteContent(raw) {
+    if (!raw) {
+        return "<p><br></p>";
+    }
+
+    try {
+        const parsed = JSON.parse(raw);
+        if (parsed.format === "pleading-pages-v1" && Array.isArray(parsed.pages)) {
+            return normalizePleadingHtml(parsed.pages.join("") || "<p><br></p>");
+        }
+    } catch (error) {
+        // Saved as plain HTML string.
+    }
+
+    return normalizePleadingHtml(raw || "<p><br></p>");
+}
+
+function getPlainText() {
+    return quill.getText().trim();
+}
+
+function hasNoteContent() {
+    if (getPlainText().length > 0) {
+        return true;
+    }
+
+    return quill.getLength() > 1;
 }
 
 function getNoteTitle() {
-    const text = pleadingQuill.getText().trim();
+    const text = getPlainText();
     return text.slice(0, 40) || `${config.assignmentId} note`;
 }
 
@@ -91,14 +118,8 @@ function getSafeExportBasename() {
     return getNoteTitle().replace(/[^\w\- ]/g, "").trim() || "note";
 }
 
-function hasNoteContent() {
-    return Boolean(pleadingQuill.getText().trim());
-}
-
 function requireNoteContent() {
-    if (hasNoteContent()) return true;
-    alert("Nothing to export");
-    return false;
+    return true;
 }
 
 function downloadBlob(blob, filename) {
@@ -119,33 +140,23 @@ function logExport(eventName, format) {
     });
 }
 
-function prepareHtmlForDocx(html) {
-    const container = document.createElement("div");
-    container.innerHTML = html;
+function createPleadingDocument() {
+    return new PleadingDocument(pleadingSpec, getEditorHtml());
+}
 
-    const fontMap = {
-        "ql-font-times-new-roman": '"Times New Roman", Times, serif',
-        "ql-font-arial": "Arial, Helvetica, sans-serif",
-        "ql-font-courier": '"Courier New", Courier, monospace',
-    };
+function updatePleadingLayout() {
+    pleadingEditor.sync();
+}
 
-    container.querySelectorAll("[class*='ql-font-']").forEach((el) => {
-        for (const cls of el.classList) {
-            if (fontMap[cls]) {
-                el.style.fontFamily = fontMap[cls];
-            }
-        }
+function schedulePleadingLayout() {
+    if (layoutFrameId !== null) {
+        return;
+    }
+
+    layoutFrameId = window.requestAnimationFrame(() => {
+        layoutFrameId = null;
+        updatePleadingLayout();
     });
-
-    container.querySelectorAll("p, li").forEach((el) => {
-        el.style.margin = "0";
-        el.style.lineHeight = "1.33";
-        if (!el.style.fontFamily) {
-            el.style.fontFamily = '"Times New Roman", Times, serif';
-        }
-    });
-
-    return container.innerHTML;
 }
 
 function exportNoteHtml() {
@@ -153,16 +164,89 @@ function exportNoteHtml() {
 
     logExport("Export HTML", "html");
     downloadBlob(
-        new Blob([getNoteContent()], { type: "text/html" }),
+        new Blob([createPleadingDocument().toHtmlDocument()], { type: "text/html" }),
         `${getSafeExportBasename()}.html`
     );
 }
 
-function exportNotePdf() {
+function getPdfExportLibs() {
+    const html2canvasFn = window.html2canvas;
+    const jsPDF =
+        window.jspdf?.jsPDF ||
+        window.jsPDF ||
+        (typeof window.jspdf === "function" ? window.jspdf : null);
+
+    return { html2canvasFn, jsPDF };
+}
+
+async function exportNotePdf() {
     if (!requireNoteContent()) return;
 
-    logExport("Export Print PDF", "pdf");
-    window.print();
+    const { html2canvasFn, jsPDF: JsPDF } = getPdfExportLibs();
+    if (typeof html2canvasFn !== "function" || typeof JsPDF !== "function") {
+        alert("PDF export is unavailable right now.");
+        return;
+    }
+
+    logExport("Export PDF", "pdf");
+    setSaveStatus("Creating PDF…");
+
+    const pleadingDoc = createPleadingDocument();
+    const exportRoot = pleadingDoc.renderExportRoot();
+    document.body.appendChild(exportRoot);
+
+    try {
+        await new Promise((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(resolve));
+        });
+
+        const pageEls = exportRoot.querySelectorAll(".pleading-export-page");
+        const pdf = new JsPDF({ unit: "pt", format: "letter", orientation: "portrait" });
+        const pageWidthPt = pdf.internal.pageSize.getWidth();
+        const pageHeightPt = pdf.internal.pageSize.getHeight();
+        const pageWidthPx = pleadingSpec.getLetterWidthPx();
+        const pageHeightPx = pleadingSpec.getLetterHeightPx();
+
+        pageEls.forEach((pageEl) => {
+            pageEl.style.width = `${pageWidthPx}px`;
+            pageEl.style.height = `${pageHeightPx}px`;
+        });
+
+        await new Promise((resolve) => {
+            requestAnimationFrame(() => requestAnimationFrame(resolve));
+        });
+
+        for (let index = 0; index < pageEls.length; index += 1) {
+            if (index > 0) {
+                pdf.addPage();
+            }
+
+            const canvas = await html2canvasFn(pageEls[index], {
+                scale: 2,
+                backgroundColor: "#ffffff",
+                logging: false,
+                useCORS: true,
+            });
+
+            pdf.addImage(
+                canvas.toDataURL("image/jpeg", 0.92),
+                "JPEG",
+                0,
+                0,
+                pageWidthPt,
+                pageHeightPt
+            );
+        }
+
+        pdf.save(`${getSafeExportBasename().replace(/\s+/g, "-")}.pdf`);
+        setSaveStatus("PDF downloaded");
+    } catch (error) {
+        console.error("PDF export error:", error);
+        alert("Could not create PDF.");
+        setSaveStatus("PDF export failed");
+    } finally {
+        exportRoot.remove();
+    }
 }
 
 function exportNoteDocx() {
@@ -175,14 +259,8 @@ function exportNoteDocx() {
 
     logExport("Export DOCX", "docx");
 
-    const bodyHtml = prepareHtmlForDocx(getNoteContent());
-    const documentHtml =
-        '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>' +
-        bodyHtml +
-        "</body></html>";
-
     try {
-        const blob = htmlDocx.asBlob(documentHtml);
+        const blob = htmlDocx.asBlob(createPleadingDocument().toHtmlDocument());
         downloadBlob(blob, `${getSafeExportBasename()}.docx`);
     } catch (error) {
         alert("Could not create Word document. Try HTML export instead.");
@@ -243,7 +321,7 @@ async function saveCurrentNote() {
         systemID: config.systemID,
         noteType: "pleading",
         title: getNoteTitle(),
-        content: getNoteContent(),
+        content: getEditorHtml(),
     };
 
     const response = await fetch("/api/notes/current", {
@@ -268,6 +346,44 @@ function scheduleSave() {
     saveTimer = setTimeout(saveCurrentNote, 800);
 }
 
+quill.on("text-change", (_delta, _oldDelta, source) => {
+    if (source === "silent" || isInitializing) {
+        return;
+    }
+    scheduleSave();
+    schedulePleadingLayout();
+});
+
+quill.on("selection-change", (range) => {
+    if (range && range.length > 0) {
+        logSystemInteraction({
+            eventType: "quill-highlight",
+            elementName: "note-editor",
+            page: "notes",
+            eventProps: { assignmentId: config.assignmentId },
+        });
+    }
+});
+
+quill.root.addEventListener("paste", () => {
+    logSystemInteraction({
+        eventType: "paste",
+        elementName: "note-editor",
+        page: "notes",
+        eventProps: { assignmentId: config.assignmentId },
+    });
+    schedulePleadingLayout();
+});
+
+quill.root.addEventListener("copy", () => {
+    logSystemInteraction({
+        eventType: "copy",
+        elementName: "note-editor",
+        page: "notes",
+        eventProps: { assignmentId: config.assignmentId },
+    });
+});
+
 async function initNote() {
     setSaveStatus("Loading…");
 
@@ -280,14 +396,19 @@ async function initNote() {
 
         if (response.ok) {
             const note = await response.json();
-            setNoteContent(note.content || "");
+            const rawContent = note.content || "";
+            const html = parseNoteContent(rawContent);
+            setEditorHtml(html);
             setSaveStatus(`Loaded (v${note.version})`);
+            if (html !== rawContent) {
+                await saveCurrentNote();
+            }
             return;
         }
 
         if (response.status === 404) {
             const html = await loadTemplateHtml();
-            setNoteContent(html);
+            setEditorHtml(html);
             setSaveStatus("New document");
             await saveCurrentNote();
             return;
@@ -298,7 +419,7 @@ async function initNote() {
         setSaveStatus("Load failed");
     } finally {
         isInitializing = false;
-        updateLineNumbers();
+        updatePleadingLayout();
     }
 }
 
@@ -325,40 +446,6 @@ document.addEventListener("keydown", (event) => {
     }
 });
 
+window.addEventListener("resize", schedulePleadingLayout);
+
 initNote();
-
-pleadingQuill.on("text-change", () => {
-    scheduleSave();
-    scheduleLineNumberUpdate();
-});
-
-updateLineNumbers();
-
-pleadingQuill.on("selection-change", (range) => {
-    if (range && range.length > 0) {
-        logSystemInteraction({
-            eventType: "quill-highlight",
-            elementName: "pleading-editor",
-            page: "notes",
-            eventProps: { assignmentId: config.assignmentId },
-        });
-    }
-});
-
-pleadingQuill.root.addEventListener("paste", () => {
-    logSystemInteraction({
-        eventType: "paste",
-        elementName: "pleading-editor",
-        page: "notes",
-        eventProps: { assignmentId: config.assignmentId },
-    });
-});
-
-pleadingQuill.root.addEventListener("copy", () => {
-    logSystemInteraction({
-        eventType: "copy",
-        elementName: "pleading-editor",
-        page: "notes",
-        eventProps: { assignmentId: config.assignmentId },
-    });
-});

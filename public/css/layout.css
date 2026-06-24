@@ -63,6 +63,7 @@ body {
   text-transform: uppercase;
   color: var(--text-muted);
   border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
 .notes-editor {

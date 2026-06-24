@@ -1,7 +1,4 @@
-const exportMenu = document.getElementById("exportMenu");
-const exportMenuBtn = document.getElementById("exportMenuBtn");
-const exportMenuList = document.getElementById("exportMenuList");
-const saveStatusEl = document.getElementById("saveStatus");
+const exportPdfBtn = document.getElementById("exportPdfBtn");
 const assignmentLabelEl = document.getElementById("assignmentLabel");
 const noteEditorEl = document.getElementById("noteEditor");
 const pleadingBackdropEl = document.getElementById("pleadingBackdrop");
@@ -41,11 +38,10 @@ pleadingEditor = new PleadingEditorChrome(pleadingSpec, {
     editorEl: quill.root,
 });
 
-function setSaveStatus(text) {
-    saveStatusEl.textContent = text;
-}
+function setSaveStatus(_text) {}
 
 function getEditorHtml() {
+    fixListItemLeadingBreaks();
     return quill.root.innerHTML;
 }
 
@@ -55,6 +51,7 @@ function setEditorHtml(html) {
     quill.root.innerHTML = html || "<p><br></p>";
     quill.format("font", "times-new-roman", "silent");
     quill.format("size", "12pt", "silent");
+    fixListItemLeadingBreaks();
     schedulePleadingLayout();
 }
 
@@ -122,15 +119,6 @@ function requireNoteContent() {
     return true;
 }
 
-function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-}
-
 function logExport(eventName, format) {
     logSystemInteraction({
         eventType: "click",
@@ -159,14 +147,13 @@ function schedulePleadingLayout() {
     });
 }
 
-function exportNoteHtml() {
-    if (!requireNoteContent()) return;
-
-    logExport("Export HTML", "html");
-    downloadBlob(
-        new Blob([createPleadingDocument().toHtmlDocument()], { type: "text/html" }),
-        `${getSafeExportBasename()}.html`
-    );
+function fixListItemLeadingBreaks(root = quill.root) {
+    root.querySelectorAll("ol > li, ul > li").forEach((li) => {
+        const hasText = li.textContent.replace(/\u200b/gi, "").length > 0;
+        if (hasText && li.firstChild?.nodeName === "BR") {
+            li.firstChild.remove();
+        }
+    });
 }
 
 function getPdfExportLibs() {
@@ -249,55 +236,6 @@ async function exportNotePdf() {
     }
 }
 
-function exportNoteDocx() {
-    if (!requireNoteContent()) return;
-
-    if (typeof htmlDocx === "undefined") {
-        alert("Word export is unavailable right now. Try HTML export instead.");
-        return;
-    }
-
-    logExport("Export DOCX", "docx");
-
-    try {
-        const blob = htmlDocx.asBlob(createPleadingDocument().toHtmlDocument());
-        downloadBlob(blob, `${getSafeExportBasename()}.docx`);
-    } catch (error) {
-        alert("Could not create Word document. Try HTML export instead.");
-    }
-}
-
-function setExportMenuOpen(isOpen) {
-    exportMenuBtn.setAttribute("aria-expanded", String(isOpen));
-    exportMenuList.hidden = !isOpen;
-}
-
-function toggleExportMenu() {
-    setExportMenuOpen(exportMenuList.hidden);
-}
-
-function closeExportMenu() {
-    setExportMenuOpen(false);
-}
-
-function handleExportChoice(format) {
-    closeExportMenu();
-
-    if (format === "html") {
-        exportNoteHtml();
-        return;
-    }
-
-    if (format === "pdf") {
-        exportNotePdf();
-        return;
-    }
-
-    if (format === "docx") {
-        exportNoteDocx();
-    }
-}
-
 async function loadTemplateHtml() {
     const assignmentUrl = `./assets/${config.assignmentId}.html`;
     let response = await fetch(assignmentUrl);
@@ -347,7 +285,13 @@ function scheduleSave() {
 }
 
 quill.on("text-change", (_delta, _oldDelta, source) => {
-    if (source === "silent" || isInitializing) {
+    if (isInitializing) {
+        return;
+    }
+    if (source !== "silent") {
+        fixListItemLeadingBreaks();
+    }
+    if (source === "silent") {
         return;
     }
     scheduleSave();
@@ -423,28 +367,7 @@ async function initNote() {
     }
 }
 
-exportMenuBtn.addEventListener("click", (event) => {
-    event.stopPropagation();
-    toggleExportMenu();
-});
-
-exportMenuList.addEventListener("click", (event) => {
-    const item = event.target.closest("[data-export]");
-    if (!item) return;
-    handleExportChoice(item.dataset.export);
-});
-
-document.addEventListener("click", (event) => {
-    if (!exportMenu.contains(event.target)) {
-        closeExportMenu();
-    }
-});
-
-document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-        closeExportMenu();
-    }
-});
+exportPdfBtn.addEventListener("click", exportNotePdf);
 
 window.addEventListener("resize", schedulePleadingLayout);
 

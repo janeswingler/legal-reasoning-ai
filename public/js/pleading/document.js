@@ -35,21 +35,6 @@ class PleadingDocument {
 
         return root;
     }
-
-    toHtmlDocument() {
-        const pages = this.bodyPages
-            .map((_bodyHtml, index) => this.renderPage(index).toHtmlString())
-            .join("");
-        const cssVars = Object.entries(this.spec.getCssVariables())
-            .map(([name, value]) => `${name}:${value}`)
-            .join(";");
-
-        return (
-            "<!DOCTYPE html><html><head><meta charset=\"UTF-8\">" +
-            `<style>${this.stylesheet.render()}</style></head>` +
-            `<body style="${cssVars}">${pages}</body></html>`
-        );
-    }
 }
 
 class PleadingEditorChrome {

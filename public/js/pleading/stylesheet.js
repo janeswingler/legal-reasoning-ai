@@ -78,6 +78,7 @@ class PleadingStylesheet {
             "}" +
             ".pleading-export-content p,.pleading-export-content li,.pleading-export-body p,.pleading-export-body li,.pleading-measure-body p,.pleading-measure-body li,.pleading-measure-inner p,.pleading-measure-inner li,.pleading-export-clip-inner p,.pleading-export-clip-inner li{line-height:var(--pleading-line-height);}" +
             ".pleading-export-content > *,.pleading-export-body > *,.pleading-measure-body > *,.pleading-measure-inner > *,.pleading-export-clip-inner > *{margin:0;}" +
+            this.renderListRules() +
             ".pleading-page-footer{" +
             "flex:0 0 var(--pleading-footer-band);width:100%;" +
             "display:flex;align-items:center;justify-content:center;" +
@@ -85,6 +86,43 @@ class PleadingStylesheet {
             "font-family:var(--pleading-font-family);font-size:12pt;color:#000;" +
             "}"
         );
+    }
+
+    renderListRules() {
+        const scopes = [
+            ".pleading-export-content",
+            ".pleading-export-body",
+            ".pleading-export-clip-inner",
+            ".pleading-measure-body",
+            ".pleading-measure-inner",
+        ];
+        const s = (selector) => scopes.map((scope) => `${scope} ${selector}`).join(",");
+        const counterFormats = ["decimal", "lower-alpha", "lower-roman"];
+
+        let css =
+            `${s("ol")},${s("ul")}{padding-left:1.5em;margin:0;}` +
+            `${s("ol > li")},${s("ul > li")}{list-style-type:none;}` +
+            `${s("ul > li::before")}{content:"\\2022";}` +
+            `${s("li::before")}{display:inline-block;white-space:nowrap;width:1.2em;line-height:var(--pleading-line-height);}` +
+            `${s("li:not(.ql-direction-rtl)::before")}{margin-left:-1.5em;margin-right:0.3em;text-align:right;}` +
+            `${s("ol li:not(.ql-direction-rtl)")},${s("ul li:not(.ql-direction-rtl)")}{padding-left:1.5em;}` +
+            `${s("ol li")}{counter-reset:list-1 list-2 list-3 list-4 list-5 list-6 list-7 list-8 list-9;counter-increment:list-0;}` +
+            `${s("ol li::before")}{content:counter(list-0,decimal) ". ";}`;
+
+        for (let level = 1; level <= 9; level += 1) {
+            const format = counterFormats[(level - 1) % 3];
+            const resets = Array.from({ length: 9 - level }, (_, index) => `list-${level + 1 + index}`).join(" ");
+            css += `${s(`ol li.ql-indent-${level}`)}{counter-increment:list-${level};`;
+            css += `${s(`ol li.ql-indent-${level}::before`)}{content:counter(list-${level},${format}) ". ";}`;
+            if (resets) {
+                css += `${s(`ol li.ql-indent-${level}`)}{counter-reset:${resets};}`;
+            }
+            css += `${s(`.ql-indent-${level}:not(.ql-direction-rtl)`)} {padding-left:${level * 3}em;}`;
+            css += `${s(`li.ql-indent-${level}:not(.ql-direction-rtl)`)} {padding-left:${1.5 + level * 3}em;}`;
+        }
+
+        css += `${s("li > br:first-child")}{display:none;}`;
+        return css;
     }
 
     renderMeasureRules() {

@@ -8,7 +8,7 @@ class PleadingStylesheet {
         const declarations = Object.entries(vars)
             .map(([name, value]) => `${name}:${value}`)
             .join(";");
-        return `:root{${declarations}}`;
+        return `.pleading-export-root{${declarations}}`;
     }
 
     render() {
@@ -43,13 +43,13 @@ class PleadingStylesheet {
             ".pleading-line-block{" +
             "flex:0 0 auto;height:var(--pleading-line-block-height);" +
             "display:grid;" +
-            "grid-template-columns:var(--pleading-line-number-column) minmax(0,1fr);" +
+            "grid-template-columns:var(--pleading-line-number-column) var(--pleading-body-frame-width) minmax(0,1fr);" +
             "}" +
             ".pleading-line-numbers{margin:0;padding:0 var(--pleading-body-text-gap) 0 0;list-style:none;text-align:right;" +
             "color:var(--pleading-number-color);font-size:var(--pleading-line-number-size);line-height:var(--pleading-line-height);}" +
             ".pleading-line-numbers li{height:var(--pleading-line-height);}" +
             ".pleading-body-frame,.pleading-editor-layer{border:none;box-shadow:none;}" +
-            ".pleading-body-frame{position:relative;height:100%;box-sizing:border-box;}" +
+            ".pleading-body-frame{position:relative;width:var(--pleading-body-frame-width);min-width:var(--pleading-body-frame-width);height:100%;box-sizing:border-box;}" +
             ".pleading-rule-pair{position:absolute;top:0;bottom:0;width:var(--pleading-rule-pair-width);" +
             "pointer-events:none;z-index:1;}" +
             ".pleading-rule-pair--left{left:var(--pleading-rule-inset-left);" +
@@ -133,6 +133,7 @@ class PleadingStylesheet {
 
     renderExportRootRules() {
         return (
+            ".pleading-export-root{background:#fff;}" +
             ".pleading-export-page{height:var(--pleading-page-height);page-break-after:always;}" +
             ".pleading-export-page:last-child{page-break-after:auto;}"
         );

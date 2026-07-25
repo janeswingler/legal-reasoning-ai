@@ -6,6 +6,7 @@ function logSystemInteraction({ eventType, elementName, page, eventProps = {} })
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
             participantID: config.participantID,
+            assignmentId: config.assignmentId,
             sessionID: config.sessionID,
             systemID: config.systemID,
             eventType,

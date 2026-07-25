@@ -18,8 +18,35 @@ function createSessionId() {
     return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+function formatAssignmentTitle(assignmentId) {
+    const weekMatch = assignmentId.match(/^week-(\d+)$/i);
+    if (weekMatch) {
+        const weekNum = parseInt(weekMatch[1], 10);
+        return `Week ${weekNum} Assignment`;
+    }
+
+    const label = assignmentId
+        .replace(/[-_]+/g, " ")
+        .replace(/\b\w/g, (char) => char.toUpperCase());
+    return `${label} Assignment`;
+}
+
+/**
+ * Study modes (pass in the student URL):
+ *   systemID=1 — Assignment Editor only (no AI chat)
+ *   systemID=2 — AI chat + Assignment Editor (default if missing/invalid)
+ * Examples:
+ *   /?participantID=abc&assignment=week-01&systemID=1
+ *   /?participantID=abc&assignment=week-01&systemID=2
+ */
+function resolveSystemId(raw) {
+    return raw === "1" ? "1" : "2";
+}
+
 const urlParticipant = readParam("participantID");
 const urlAssignment = readParam("assignment");
+const systemID = resolveSystemId(readParam("systemID"));
+const isAiEnabled = systemID === "2";
 
 const participantID =
     urlParticipant ||
@@ -44,5 +71,15 @@ const config = {
     participantID,
     assignmentId,
     sessionID,
-    systemID: "legal-reasoning-ai-v1",
+    systemID,
+    isAiEnabled,
+    assignmentTitle: formatAssignmentTitle(assignmentId),
 };
+
+document.body.classList.remove("system-1", "system-2");
+document.body.classList.add(isAiEnabled ? "system-2" : "system-1");
+
+const assignmentTitleEl = document.getElementById("assignmentTitle");
+if (assignmentTitleEl) {
+    assignmentTitleEl.textContent = config.assignmentTitle;
+}

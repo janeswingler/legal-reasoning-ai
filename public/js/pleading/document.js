@@ -1,9 +1,11 @@
 class PleadingDocument {
-    constructor(spec, contentHtml) {
+    constructor(spec, contentHtml, { pageHtmls = null } = {}) {
         this.spec = spec;
         this.contentHtml = contentHtml;
         this.paginator = new PleadingPaginator(spec);
-        this.bodyPages = this.paginator.paginate(contentHtml);
+        this.bodyPages = pageHtmls?.length
+            ? pageHtmls.map((html) => this.paginator.prepareBodyHtml(html))
+            : this.paginator.paginate(contentHtml);
         this.stylesheet = new PleadingStylesheet(spec);
     }
 
@@ -46,13 +48,15 @@ class PleadingEditorChrome {
         this.paginator = new PleadingPaginator(spec);
     }
 
-    sync() {
-        const pageCount = this.paginator.paginate(this.editorEl.innerHTML).length;
+    sync(pageCount) {
+        const resolvedPageCount =
+            pageCount ??
+            this.paginator.paginate(stripPleadingPageBreakMarkup(this.editorEl.innerHTML)).length;
         const editorStridePx = this.spec.getEditorPageStridePx();
-        const documentHeightPx = pageCount * editorStridePx;
+        const documentHeightPx = resolvedPageCount * editorStridePx;
 
         this.backdropEl.innerHTML = "";
-        for (let index = 0; index < pageCount; index += 1) {
+        for (let index = 0; index < resolvedPageCount; index += 1) {
             const sheet = new PleadingPageView(this.spec, {
                 pageNumber: index + 1,
                 mode: "editor",
@@ -63,6 +67,6 @@ class PleadingEditorChrome {
         this.scrollSurfaceEl.style.minHeight = `${documentHeightPx}px`;
         this.editorEl.style.minHeight = `${documentHeightPx}px`;
 
-        return pageCount;
+        return resolvedPageCount;
     }
 }

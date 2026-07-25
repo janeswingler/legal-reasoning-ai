@@ -5,21 +5,25 @@ class PleadingLayoutSpec {
         this.fontSizePt = 12;
         this.lineSpacing = 1.7;
         this.linesPerPage = 28;
-        this.marginLeftIn = 0.5;
-        this.marginRightIn = 0.9;
+        this.marginLeftIn = 0.25;
+        this.marginRightIn = 0.25;
         this.marginTopIn = 0.57;
         this.footerBandIn = 0.25;
         this.marginBottomIn = 0.5;
         this.lineNumberColumnIn = 0.35;
         this.bodyPaddingIn = 0;
-        this.ruleColor = "#999999";
+        this.charsPerLine = 54;
+        this.referenceCharsPerLineAtFullWidth = 60;
+        this.minMarginIn = 0.25;
+        this.ruleColor = "#b8b2a8";
         this.ruleLinePx = 1;
         this.ruleGapPx = 3;
         this.ruleInsetLeftPx = 6;
         this.bodyTextRuleGapEm = 0.2;
         this.exportPdfRightInsetPx = 8;
-        this.numberColor = "#666666";
-        this.lineNumberSizePt = 14;
+        this.numberColor = "#a8a196";
+        this.footerColor = "#a8a196";
+        this.lineNumberSizePt = 12;
         this.fontFamily = '"Times New Roman", Times, serif';
         this.screenDpi = 96;
 
@@ -29,6 +33,8 @@ class PleadingLayoutSpec {
         this._bodyContentWidthPx = null;
         this._bodyTextPaddingStyles = null;
         this._exportContentLayout = null;
+        this._bodyTextLineWidthPx = null;
+        this._marginsResolvedForChars = false;
     }
 
     static default() {
@@ -101,13 +107,98 @@ class PleadingLayoutSpec {
         return Math.ceil((contentHeightPx - 1) / lineBlockHeightPx);
     }
 
+    getReferenceLineSample() {
+        return "012345678901234567890123456789012345678901234567890123456".slice(
+            0,
+            this.charsPerLine
+        );
+    }
+
+    measureBodyTextLineWidthPx() {
+        if (this._bodyTextLineWidthPx !== null) {
+            return this._bodyTextLineWidthPx;
+        }
+
+        const available = this.getAvailableBodyTextWidthPx();
+        this._bodyTextLineWidthPx = Math.round(
+            available * (this.charsPerLine / this.referenceCharsPerLineAtFullWidth)
+        );
+        return this._bodyTextLineWidthPx;
+    }
+
+    getBodyFrameWidthPx() {
+        const pad = this.getBodyTextPaddingStyles();
+        return Math.ceil(
+            this.measureBodyTextLineWidthPx() +
+                parseFloat(pad.left) +
+                parseFloat(pad.right)
+        );
+    }
+
+    getEditorPageWidthPx() {
+        return (
+            this.inToPx(this.marginLeftIn) +
+            this.inToPx(this.lineNumberColumnIn) +
+            this.getBodyFrameWidthPx() +
+            this.inToPx(this.marginRightIn)
+        );
+    }
+
+    getAvailableBodyTextWidthPx() {
+        const pad = this.getBodyTextPaddingStyles();
+        return (
+            this.inToPx(this.pageWidthIn) -
+            this.inToPx(this.marginLeftIn) -
+            this.inToPx(this.marginRightIn) -
+            this.inToPx(this.lineNumberColumnIn) -
+            parseFloat(pad.left) -
+            parseFloat(pad.right)
+        );
+    }
+
+    ensureCharsPerLineFit() {
+        if (this._marginsResolvedForChars) {
+            return;
+        }
+
+        this._marginsResolvedForChars = true;
+        const requiredTextPx = this.measureBodyTextLineWidthPx();
+        let availableTextPx = this.getAvailableBodyTextWidthPx();
+
+        if (availableTextPx >= requiredTextPx) {
+            return;
+        }
+
+        let deficitPx = requiredTextPx - availableTextPx;
+        const minMarginPx = this.inToPx(this.minMarginIn);
+        const rightMarginPx = this.inToPx(this.marginRightIn);
+        const shrinkRightPx = Math.max(0, rightMarginPx - minMarginPx);
+        const rightReductionPx = Math.min(deficitPx, shrinkRightPx);
+
+        this.marginRightIn -= rightReductionPx / this.screenDpi;
+        deficitPx -= rightReductionPx;
+
+        if (deficitPx > 0) {
+            const leftMarginPx = this.inToPx(this.marginLeftIn);
+            const shrinkLeftPx = Math.max(0, leftMarginPx - minMarginPx);
+            const leftReductionPx = Math.min(deficitPx, shrinkLeftPx);
+            this.marginLeftIn -= leftReductionPx / this.screenDpi;
+        }
+
+        this._exportContentLayout = null;
+        this._bodyContentWidthPx = null;
+        this._bodyTextLineWidthPx = null;
+    }
+
     getCssVariables() {
+        this.ensureCharsPerLineFit();
         const lineHeight = this.getLineHeightCss();
         const lineBlockHeight = `${this.getLineBlockHeightIn()}in`;
 
         return {
             "--pleading-page-width": `${this.pageWidthIn}in`,
             "--pleading-page-height": `${this.pageHeightIn}in`,
+            "--pleading-editor-page-width": `${this.getEditorPageWidthPx()}px`,
             "--pleading-margin-left": `${this.marginLeftIn}in`,
             "--pleading-margin-right": `${this.marginRightIn}in`,
             "--pleading-margin-top": `${this.marginTopIn}in`,
@@ -129,7 +220,11 @@ class PleadingLayoutSpec {
             "--pleading-body-text-padding-right":
                 `calc(${this.ruleLinePx}px * 2 + ${this.ruleGapPx}px + ${this.ruleInsetLeftPx}px + ${this.bodyTextRuleGapEm}em)`,
             "--pleading-font-family": this.fontFamily,
+            "--pleading-font-size": `${this.fontSizePt}pt`,
+            "--pleading-body-text-width": `${this.measureBodyTextLineWidthPx()}px`,
+            "--pleading-body-frame-width": `${this.getBodyFrameWidthPx()}px`,
             "--pleading-number-color": this.numberColor,
+            "--pleading-footer-color": this.footerColor,
             "--pleading-line-number-size": `${this.lineNumberSizePt}pt`,
             "--pleading-editor-inset-left": `calc(${this.marginLeftIn}in + ${this.lineNumberColumnIn}in)`,
             "--pleading-editor-inset-right": `${this.marginRightIn}in`,
@@ -176,33 +271,14 @@ class PleadingLayoutSpec {
             return this._exportContentLayout;
         }
 
-        const probeRoot = document.createElement("div");
-        probeRoot.className = "pleading-export-root";
-        probeRoot.style.width = `${this.getLetterWidthPx()}px`;
-        this.applyCssVariables(probeRoot);
-
-        probeRoot.innerHTML =
-            '<div class="pleading-export-page pleading-page">' +
-            '<div class="pleading-line-block">' +
-            '<ol class="pleading-line-numbers" aria-hidden="true"><li>1</li></ol>' +
-            '<div class="pleading-body-frame">' +
-            '<div class="pleading-export-body">&nbsp;</div>' +
-            "</div></div></div>";
-
-        document.body.appendChild(probeRoot);
-
         const pad = this.getBodyTextPaddingStyles();
-        const bodyFrame = probeRoot.querySelector(".pleading-body-frame");
         const marginLeftPx = parseFloat(pad.left);
         const marginRightPx = parseFloat(pad.right) + this.exportPdfRightInsetPx;
-        const contentWidthPx = bodyFrame.clientWidth - marginLeftPx - marginRightPx;
-
-        probeRoot.remove();
 
         this._exportContentLayout = {
             marginLeft: `${marginLeftPx}px`,
             marginRight: `${marginRightPx}px`,
-            contentWidthPx: contentWidthPx > 0 ? Math.floor(contentWidthPx) : 504,
+            contentWidthPx: Math.floor(this.measureBodyTextLineWidthPx()),
         };
         return this._exportContentLayout;
     }
@@ -212,7 +288,7 @@ class PleadingLayoutSpec {
             return this._bodyContentWidthPx;
         }
 
-        this._bodyContentWidthPx = this.getExportContentLayout().contentWidthPx;
+        this._bodyContentWidthPx = Math.floor(this.measureBodyTextLineWidthPx());
         return this._bodyContentWidthPx;
     }
 }

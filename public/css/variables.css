@@ -1,32 +1,49 @@
 :root {
   --font-sans: "Segoe UI", system-ui, -apple-system, Roboto, Arial, sans-serif;
   --font-legal: "Times New Roman", Times, serif;
+  --font-assistant: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, "Times New Roman", serif;
 
-  /* Warm neutrals */
-  --bg-app: #e4e2dc;
+  /* 19px base when the browser default is 16px; tokens reduced 0.5pt each */
+  --font-size-root: 118.75%;
+  --font-size-xs: calc(0.8125rem - 0.5pt);
+  --font-size-sm: calc(0.9375rem - 0.5pt);
+  --font-size-md: calc(1rem - 0.5pt);
+  --font-size-lg: calc(1.0625rem - 0.5pt);
+  --font-size-xl: calc(1.1875rem - 0.5pt);
+
+  --bg-header: transparent;
+  --text-on-header: var(--text);
+  --header-accent: transparent;
+
+  /* Claude-like warm parchment */
+  --bg-app: #f5f4f1;
   --bg-panel: #ffffff;
-  --bg-inset: #f5f4f1;
+  --bg-inset: #eeedeb;
   --bg-composer: #fafaf8;
 
-  --border: #cfc9bf;
-  --border-strong: #a8a196;
+  --border: #e4e2dc;
+  --border-strong: #d4d1ca;
 
   --text: #1c1b19;
-  --text-muted: #6f6a63;
+  --text-muted: #8a8a84;
 
   /* Ink black */
   --accent: #1c1b19;
   --accent-hover: #0a0a09;
 
-  --bubble-user: #2a2826;
-  --bubble-assistant: #ffffff;
+  --bubble-user: #e4e2dc;
+  --bubble-assistant: transparent;
 
-  --radius: 14px;
-  --radius-sm: 10px;
+  --composer-send: #504c45;
+  --composer-send-hover: #46433d;
+  --composer-send-disabled: #d4cfc6;
+
+  --radius: 18px;
+  --radius-sm: 12px;
   --radius-pill: 999px;
 
-  --shadow-panel: 0 8px 30px rgba(28, 27, 25, 0.1), 0 2px 6px rgba(28, 27, 25, 0.05);
-  --shadow-bubble: 0 2px 8px rgba(28, 27, 25, 0.07);
+  --shadow-panel: 0 4px 24px rgba(28, 27, 25, 0.06), 0 1px 3px rgba(28, 27, 25, 0.04);
+  --shadow-bubble: none;
   --shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.6);
 
   --space-1: 0.25rem;

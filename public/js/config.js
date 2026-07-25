@@ -36,8 +36,8 @@ function formatAssignmentTitle(assignmentId) {
  *   systemID=1 — Assignment Editor only (no AI chat)
  *   systemID=2 — AI chat + Assignment Editor (default if missing/invalid)
  * Examples:
- *   /?participantID=abc&assignment=week-01&systemID=1
- *   /?participantID=abc&assignment=week-01&systemID=2
+ *   /app.html?participantID=abc&assignment=week-01&systemID=1
+ *   /app.html?participantID=abc&assignment=week-01&systemID=2
  */
 function resolveSystemId(raw) {
     return raw === "1" ? "1" : "2";

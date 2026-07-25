@@ -3,14 +3,13 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
-const mongoose = require("mongoose");
-const ChatSession = require("../models/ChatSession.js");
-const ChatAttachment = require("../models/ChatAttachment.js");
-const DocumentChunk = require("../models/DocumentChunk.js");
+const chatSessionsDb = require("../db/chatSessions.js");
+const chatAttachmentsDb = require("../db/chatAttachments.js");
+const documentChunksDb = require("../db/documentChunks.js");
+const { isValidId } = require("../db/helpers.js");
 const { extractPdfPages } = require("../services/pdf.js");
 const { chunkPages } = require("../services/chunking.js");
-const { embedTexts } = require("../services/openai.js");
-const { EMBEDDING_MODEL } = require("../config/rag.js");
+const { embedTexts, EMBEDDING_MODEL } = require("../services/embeddings.js");
 
 const router = express.Router({ mergeParams: true });
 
@@ -21,25 +20,18 @@ const MAX_MB = MAX_BYTES / (1024 * 1024);
 function requireParticipantAssignment(req, res) {
     const participantID = req.query.participantID || req.body.participantID;
     const assignmentId = req.query.assignmentId || req.body.assignmentId;
+    const systemID = req.query.systemID || req.body.systemID || null;
 
     if (!participantID || !assignmentId) {
         res.status(400).json({ error: "participantID and assignmentId required" });
         return null;
     }
 
-    return { participantID, assignmentId };
+    return { participantID, assignmentId, systemID };
 }
 
 async function findOwnedSession(chatSessionId, participantID, assignmentId) {
-    if (!mongoose.Types.ObjectId.isValid(chatSessionId)) {
-        return null;
-    }
-
-    return ChatSession.findOne({
-        _id: chatSessionId,
-        participantID,
-        assignmentId,
-    });
+    return chatSessionsDb.findOwned(chatSessionId, participantID, assignmentId);
 }
 
 const storage = multer.diskStorage({
@@ -99,15 +91,16 @@ async function processAttachment(attachment, filePath) {
         const chunks = chunkPages(pages, attachment.originalFilename);
 
         if (!chunks.length) {
-            attachment.status = "failed";
-            attachment.errorMessage = "No readable text found in PDF";
-            await attachment.save();
+            await chatAttachmentsDb.update(attachment.id, {
+                status: "failed",
+                errorMessage: "No readable text found in PDF",
+            });
             return;
         }
 
-        const existingCount = await DocumentChunk.countDocuments({
-            chatSessionId: attachment.chatSessionId,
-        });
+        const existingCount = await documentChunksDb.countBySessionId(
+            attachment.chatSessionId
+        );
 
         let embeddings = [];
         try {
@@ -117,10 +110,11 @@ async function processAttachment(attachment, filePath) {
         }
 
         const chunkDocs = chunks.map((chunk, index) => ({
-            attachmentId: attachment._id,
+            attachmentId: attachment.id,
             chatSessionId: attachment.chatSessionId,
             assignmentId: attachment.assignmentId,
             participantID: attachment.participantID,
+            systemID: attachment.systemID,
             chunkIndex: existingCount + index,
             text: chunk.text,
             sourceFilename: chunk.sourceFilename,
@@ -130,16 +124,18 @@ async function processAttachment(attachment, filePath) {
             embeddingModel: embeddings[index] ? EMBEDDING_MODEL : null,
         }));
 
-        await DocumentChunk.insertMany(chunkDocs);
+        await documentChunksDb.insertMany(chunkDocs);
 
-        attachment.status = "ready";
-        attachment.chunkCount = chunks.length;
-        attachment.errorMessage = null;
-        await attachment.save();
+        await chatAttachmentsDb.update(attachment.id, {
+            status: "ready",
+            chunkCount: chunks.length,
+            errorMessage: null,
+        });
     } catch (error) {
-        attachment.status = "failed";
-        attachment.errorMessage = error.message || "Could not process PDF";
-        await attachment.save();
+        await chatAttachmentsDb.update(attachment.id, {
+            status: "failed",
+            errorMessage: error.message || "Could not process PDF",
+        });
     }
 }
 
@@ -158,9 +154,9 @@ router.get("/", async (req, res) => {
             return res.status(404).json({ error: "Chat session not found" });
         }
 
-        const attachments = await ChatAttachment.find({
-            chatSessionId: session._id,
-        }).sort({ createdAt: -1 });
+        const attachments = await chatAttachmentsDb.findPendingBySession(
+            session.id
+        );
 
         res.json({ attachments });
     } catch (error) {
@@ -188,10 +184,11 @@ router.post("/", handleUpload, async (req, res) => {
             return res.status(404).json({ error: "Chat session not found" });
         }
 
-        const attachment = await ChatAttachment.create({
+        let attachment = await chatAttachmentsDb.create({
             participantID: ids.participantID,
             assignmentId: ids.assignmentId,
-            chatSessionId: session._id,
+            systemID: ids.systemID || session.systemID || null,
+            chatSessionId: session.id,
             originalFilename: req.file.originalname,
             storedFilename: req.file.filename,
             mimeType: req.file.mimetype,
@@ -200,6 +197,7 @@ router.post("/", handleUpload, async (req, res) => {
         });
 
         await processAttachment(attachment, req.file.path);
+        attachment = await chatAttachmentsDb.findById(attachment.id);
 
         res.status(201).json({ attachment });
     } catch (error) {
@@ -224,7 +222,7 @@ router.delete("/:attachmentId", async (req, res) => {
         const ids = requireParticipantAssignment(req, res);
         if (!ids) return;
 
-        if (!mongoose.Types.ObjectId.isValid(req.params.attachmentId)) {
+        if (!isValidId(req.params.attachmentId)) {
             return res.status(404).json({ error: "Attachment not found" });
         }
 
@@ -238,12 +236,15 @@ router.delete("/:attachmentId", async (req, res) => {
             return res.status(404).json({ error: "Chat session not found" });
         }
 
-        const attachment = await ChatAttachment.findOne({
-            _id: req.params.attachmentId,
-            chatSessionId: session._id,
-        });
+        const attachment = await chatAttachmentsDb.findById(
+            req.params.attachmentId
+        );
 
-        if (!attachment) {
+        if (
+            !attachment ||
+            String(attachment.chatSessionId) !== String(session.id) ||
+            attachment.exchangeId
+        ) {
             return res.status(404).json({ error: "Attachment not found" });
         }
 
@@ -258,8 +259,8 @@ router.delete("/:attachmentId", async (req, res) => {
             fs.unlinkSync(filePath);
         }
 
-        await DocumentChunk.deleteMany({ attachmentId: attachment._id });
-        await attachment.deleteOne();
+        await documentChunksDb.deleteByAttachmentId(attachment.id);
+        await chatAttachmentsDb.remove(attachment.id);
 
         res.json({ ok: true });
     } catch (error) {

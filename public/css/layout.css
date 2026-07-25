@@ -4,6 +4,10 @@
   box-sizing: border-box;
 }
 
+html {
+  font-size: var(--font-size-root);
+}
+
 html,
 body {
   height: 100%;
@@ -12,6 +16,8 @@ body {
 body {
   margin: 0;
   font-family: var(--font-sans);
+  font-size: var(--font-size-md);
+  line-height: 1.5;
   color: var(--text);
   background: var(--bg-app);
   display: flex;
@@ -19,26 +25,12 @@ body {
   min-height: 100%;
 }
 
-.app-header {
-  padding: var(--space-4) var(--space-5);
-  background: var(--bg-panel);
-  border-bottom: 1px solid var(--border-strong);
-  box-shadow: 0 2px 8px rgba(28, 27, 25, 0.06);
-}
-
-.app-header h1 {
-  margin: 0;
-  font-size: 1.05rem;
-  font-weight: 650;
-  letter-spacing: -0.02em;
-}
-
 .app-main {
   flex: 1;
   display: grid;
-  grid-template-columns: 1.35fr 1fr;
-  gap: var(--space-4);
-  padding: var(--space-4);
+  grid-template-columns: minmax(0, 1.35fr) minmax(20rem, 0.9fr);
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3) var(--space-3) var(--space-2);
   min-height: 0;
   width: 100%;
 }
@@ -47,22 +39,37 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/* Chat is open page canvas — not a card */
+.panel-chat {
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  box-shadow: none;
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+}
+
+/* Notes remains the only boxed surface */
+.panel-notes {
   background: var(--bg-panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  border-radius: 0;
   box-shadow: var(--shadow-panel);
   padding: var(--space-4);
 }
 
-.panel-notes h2 {
-  margin: 0 0 var(--space-3);
-  padding-bottom: var(--space-3);
-  font-size: 0.8rem;
-  font-weight: 650;
-  letter-spacing: 0.06em;
+.panel-notes h2,
+.panel-notes__label {
+  margin: 0;
+  padding: 0;
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-muted);
-  border-bottom: 1px solid var(--border);
+  border: none;
+  flex-shrink: 0;
 }
 
 .notes-editor {
@@ -73,7 +80,7 @@ body {
   border: none;
   padding: var(--space-3) 0 0;
   font-family: var(--font-sans);
-  font-size: 0.95rem;
+  font-size: var(--font-size-md);
   line-height: 1.5;
   background: transparent;
 }
@@ -92,4 +99,49 @@ body {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border: 0;
+}
+
+/* Soft, thin scrollbars for chat + notes */
+.chat-log,
+.pleading-paper {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(28, 27, 25, 0.22) transparent;
+}
+
+.chat-log::-webkit-scrollbar,
+.pleading-paper::-webkit-scrollbar {
+  width: 7px;
+}
+
+.chat-log::-webkit-scrollbar-track,
+.pleading-paper::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-log::-webkit-scrollbar-thumb,
+.pleading-paper::-webkit-scrollbar-thumb {
+  background: rgba(28, 27, 25, 0.2);
+  border-radius: 999px;
+}
+
+.chat-log::-webkit-scrollbar-thumb:hover,
+.pleading-paper::-webkit-scrollbar-thumb:hover {
+  background: rgba(28, 27, 25, 0.32);
+}
+
+/* systemID=1 — Assignment Editor only, centered */
+body.system-1 .panel-chat {
+  display: none;
+}
+
+body.system-1 .app-main {
+  grid-template-columns: 1fr;
+  justify-items: center;
+  padding: var(--space-4);
+}
+
+body.system-1 .panel-notes {
+  /* Match typical system-2 notes column (~0.9fr of the split) */
+  width: min(36rem, 100%);
+  max-width: 100%;
 }

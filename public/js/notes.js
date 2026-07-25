@@ -1,238 +1,177 @@
-const exportMenu = document.getElementById("exportMenu");
-const exportMenuBtn = document.getElementById("exportMenuBtn");
-const exportMenuList = document.getElementById("exportMenuList");
-const saveStatusEl = document.getElementById("saveStatus");
-const assignmentLabelEl = document.getElementById("assignmentLabel");
-const pleadingLineNumbersEl = document.getElementById("pleadingLineNumbers");
+const noteToolbar = document.getElementById("noteToolbar");
+const exportPdfBtn = document.getElementById("exportPdfBtn");
+const submitAssignmentBtn = document.getElementById("submitAssignmentBtn");
+const noteEditorEl = document.getElementById("noteEditor");
+const pleadingPaperEl = document.getElementById("pleadingPaper");
+const pleadingScaleSizerEl = document.getElementById("pleadingScaleSizer");
+const pleadingScaleFrameEl = document.getElementById("pleadingScaleFrame");
+const pleadingBackdropEl = document.getElementById("pleadingBackdrop");
+const pleadingScrollSurfaceEl = document.getElementById("pleadingScrollSurface");
 
-const PLEADING_LINE_HEIGHT = 32;
-const MIN_PLEADING_LINES = 28;
+const noteBusyStatus = document.getElementById("noteBusyStatus");
+const noteBusyStatusText = document.getElementById("noteBusyStatusText");
 
-const Font = Quill.import("formats/font");
-Font.whitelist = ["times-new-roman", "arial", "courier"];
-Quill.register(Font, true);
-
-const SizeStyle = Quill.import("attributors/style/size");
-SizeStyle.whitelist = ["10pt", "12pt", "14pt"];
-Quill.register(SizeStyle, true);
-
+const pleadingSpec = PleadingLayoutSpec.default();
+let pleadingEditor = null;
 let saveTimer = null;
-let lineNumberTimer = null;
 let isInitializing = true;
+let cachedPdf = null;
+let lastPointer = {
+    x: Math.round(window.innerWidth / 2),
+    y: Math.round(window.innerHeight / 2),
+};
 
-const pleadingQuill = new Quill("#pleadingEditor", {
-    theme: "snow",
-    modules: {
-        toolbar: "#pleadingToolbar",
+function setSaveStatus(_text) {
+    // Autosave / load status stays quiet; busy work uses setBusyStatus.
+}
+
+function positionBusyNote(clientX, clientY) {
+    if (!noteBusyStatus || noteBusyStatus.hidden) {
+        return;
+    }
+
+    // Anchor on the spinner (left side), roughly where a cursor hotspot would be.
+    const hotspotX = 8;
+    const hotspotY = 12;
+    noteBusyStatus.style.transform = `translate3d(${clientX - hotspotX}px, ${clientY - hotspotY}px, 0)`;
+}
+
+function setBusyStatus(text) {
+    if (!noteBusyStatus) {
+        return;
+    }
+
+    const message = String(text || "").trim();
+    if (!message) {
+        noteBusyStatus.hidden = true;
+        if (noteBusyStatusText) {
+            noteBusyStatusText.textContent = "";
+        }
+        noteBusyStatus.style.transform = "";
+        return;
+    }
+
+    if (noteBusyStatusText) {
+        noteBusyStatusText.textContent = message;
+    }
+    noteBusyStatus.hidden = false;
+    positionBusyNote(lastPointer.x, lastPointer.y);
+}
+
+document.addEventListener(
+    "pointermove",
+    (event) => {
+        lastPointer = { x: event.clientX, y: event.clientY };
+        if (document.body.classList.contains("is-notes-busy")) {
+            positionBusyNote(event.clientX, event.clientY);
+        }
     },
-    placeholder: "",
-});
+    { passive: true }
+);
 
-function updateLineNumbers() {
-    const editor = pleadingQuill.root;
-    const lineCount = Math.max(
-        MIN_PLEADING_LINES,
-        Math.ceil(editor.scrollHeight / PLEADING_LINE_HEIGHT)
-    );
-
-    pleadingLineNumbersEl.innerHTML = "";
-    for (let i = 1; i <= lineCount; i++) {
-        const li = document.createElement("li");
-        li.textContent = String(i);
-        pleadingLineNumbersEl.appendChild(li);
-    }
+function invalidatePdfCache() {
+    cachedPdf = null;
 }
 
-function scheduleLineNumberUpdate() {
-    clearTimeout(lineNumberTimer);
-    lineNumberTimer = setTimeout(updateLineNumbers, 50);
+function getPdfFingerprint() {
+    return getEditorHtml();
 }
 
-assignmentLabelEl.textContent = config.assignmentId;
-
-function setSaveStatus(text) {
-    saveStatusEl.textContent = text;
-}
-
-function getNoteContent() {
-    return pleadingQuill.root.innerHTML;
-}
-
-function trimLeadingEmptyParagraphs(html) {
-    const div = document.createElement("div");
-    div.innerHTML = html;
-
-    while (div.firstElementChild) {
-        const first = div.firstElementChild;
-        const isEmptyParagraph =
-            first.tagName === "P" &&
-            !first.textContent.trim() &&
-            (first.innerHTML === "<br>" || first.innerHTML === "");
-
-        if (!isEmptyParagraph) break;
-        if (div.children.length === 1) break;
-        first.remove();
+async function getOrBuildPdfBlob() {
+    const fingerprint = getPdfFingerprint();
+    if (cachedPdf && cachedPdf.fingerprint === fingerprint) {
+        return cachedPdf.blob;
     }
 
-    return div.innerHTML || "<p><br></p>";
+    const blob = await buildPleadingPdfBlob({
+        spec: pleadingSpec,
+        contentHtml: fingerprint,
+        pageHtmls: pleadingEditor.getPageHtmls(),
+    });
+
+    cachedPdf = { fingerprint, blob };
+    return blob;
 }
 
-function setNoteContent(content) {
-    pleadingQuill.root.innerHTML = trimLeadingEmptyParagraphs(content || "<p><br></p>");
-    scheduleLineNumberUpdate();
+function setNotesBusy(isBusy) {
+    document.body.classList.toggle("is-notes-busy", Boolean(isBusy));
+    document.body.setAttribute("aria-busy", isBusy ? "true" : "false");
 }
 
-function getNoteTitle() {
-    const text = pleadingQuill.getText().trim();
-    return text.slice(0, 40) || `${config.assignmentId} note`;
-}
-
-function getSafeExportBasename() {
-    return getNoteTitle().replace(/[^\w\- ]/g, "").trim() || "note";
-}
-
-function hasNoteContent() {
-    return Boolean(pleadingQuill.getText().trim());
-}
-
-function requireNoteContent() {
-    if (hasNoteContent()) return true;
-    alert("Nothing to export");
-    return false;
-}
-
-function downloadBlob(blob, filename) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
-    URL.revokeObjectURL(url);
-}
-
-function logExport(eventName, format) {
-    logSystemInteraction({
-        eventType: "click",
-        elementName: eventName,
-        page: "notes",
-        eventProps: { assignmentId: config.assignmentId, format },
+/** Let the browser paint the wait cursor / status before heavy PDF work. */
+function yieldForBusyPaint() {
+    return new Promise((resolve) => {
+        requestAnimationFrame(() => {
+            requestAnimationFrame(resolve);
+        });
     });
 }
 
-function prepareHtmlForDocx(html) {
-    const container = document.createElement("div");
-    container.innerHTML = html;
+async function beginNotesBusy(message) {
+    setBusyStatus(message);
+    setNotesBusy(true);
+    await yieldForBusyPaint();
+}
 
-    const fontMap = {
-        "ql-font-times-new-roman": '"Times New Roman", Times, serif',
-        "ql-font-arial": "Arial, Helvetica, sans-serif",
-        "ql-font-courier": '"Courier New", Courier, monospace',
+function endNotesBusy() {
+    setNotesBusy(false);
+    setBusyStatus("");
+}
+
+function normalizeNoteHtml(html) {
+    const container = document.createElement("div");
+    container.innerHTML = html || "<p><br></p>";
+
+    const blocks = Array.from(container.children);
+    if (blocks.length === 0) {
+        return "<p><br></p>";
+    }
+
+    const hasText = container.textContent.replace(/\u200b/gi, "").trim().length > 0;
+    const isEmptyBlock = (el) => {
+        const text = el.textContent.replace(/\u200b/gi, "").trim();
+        return text === "" && !el.querySelector("img, table, ul, ol");
     };
 
-    container.querySelectorAll("[class*='ql-font-']").forEach((el) => {
-        for (const cls of el.classList) {
-            if (fontMap[cls]) {
-                el.style.fontFamily = fontMap[cls];
-            }
-        }
-    });
-
-    container.querySelectorAll("p, li").forEach((el) => {
-        el.style.margin = "0";
-        el.style.lineHeight = "1.33";
-        if (!el.style.fontFamily) {
-            el.style.fontFamily = '"Times New Roman", Times, serif';
-        }
-    });
+    if (!hasText && blocks.every(isEmptyBlock)) {
+        return "<p><br></p>";
+    }
 
     return container.innerHTML;
 }
 
-function exportNoteHtml() {
-    if (!requireNoteContent()) return;
-
-    logExport("Export HTML", "html");
-    downloadBlob(
-        new Blob([getNoteContent()], { type: "text/html" }),
-        `${getSafeExportBasename()}.html`
-    );
-}
-
-function exportNotePdf() {
-    if (!requireNoteContent()) return;
-
-    logExport("Export Print PDF", "pdf");
-    window.print();
-}
-
-function exportNoteDocx() {
-    if (!requireNoteContent()) return;
-
-    if (typeof htmlDocx === "undefined") {
-        alert("Word export is unavailable right now. Try HTML export instead.");
-        return;
+function parseNoteContent(raw) {
+    if (!raw) {
+        return "<p><br></p>";
     }
-
-    logExport("Export DOCX", "docx");
-
-    const bodyHtml = prepareHtmlForDocx(getNoteContent());
-    const documentHtml =
-        '<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>' +
-        bodyHtml +
-        "</body></html>";
 
     try {
-        const blob = htmlDocx.asBlob(documentHtml);
-        downloadBlob(blob, `${getSafeExportBasename()}.docx`);
+        const parsed = JSON.parse(raw);
+        if (parsed.format === "pleading-pages-v1" && Array.isArray(parsed.pages)) {
+            return normalizeNoteHtml(parsed.pages.join("") || "<p><br></p>");
+        }
     } catch (error) {
-        alert("Could not create Word document. Try HTML export instead.");
+        // Saved as plain HTML string.
     }
+
+    return normalizeNoteHtml(raw || "<p><br></p>");
 }
 
-function setExportMenuOpen(isOpen) {
-    exportMenuBtn.setAttribute("aria-expanded", String(isOpen));
-    exportMenuList.hidden = !isOpen;
+function getEditorHtml() {
+    return pleadingEditor.getHtml();
 }
 
-function toggleExportMenu() {
-    setExportMenuOpen(exportMenuList.hidden);
+function setEditorHtml(html) {
+    pleadingEditor.setHtml(html);
 }
 
-function closeExportMenu() {
-    setExportMenuOpen(false);
+function getPlainText() {
+    return pleadingEditor.getPlainText();
 }
 
-function handleExportChoice(format) {
-    closeExportMenu();
-
-    if (format === "html") {
-        exportNoteHtml();
-        return;
-    }
-
-    if (format === "pdf") {
-        exportNotePdf();
-        return;
-    }
-
-    if (format === "docx") {
-        exportNoteDocx();
-    }
-}
-
-async function loadTemplateHtml() {
-    const assignmentUrl = `./assets/${config.assignmentId}.html`;
-    let response = await fetch(assignmentUrl);
-
-    if (!response.ok) {
-        response = await fetch("./assets/default.html");
-    }
-
-    if (!response.ok) {
-        throw new Error("Could not load template");
-    }
-
-    return response.text();
+function getNoteTitle() {
+    const text = getPlainText();
+    return text.slice(0, 40) || `${config.assignmentId} note`;
 }
 
 async function saveCurrentNote() {
@@ -241,12 +180,11 @@ async function saveCurrentNote() {
         assignmentId: config.assignmentId,
         sessionID: config.sessionID,
         systemID: config.systemID,
-        noteType: "pleading",
         title: getNoteTitle(),
-        content: getNoteContent(),
+        content: getEditorHtml(),
     };
 
-    const response = await fetch("/api/notes/current", {
+    const response = await fetch("/api/assignments/current", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -257,22 +195,259 @@ async function saveCurrentNote() {
         return;
     }
 
-    const saved = await response.json();
-    setSaveStatus(`Saved (v${saved.version})`);
+    await response.json();
+    setSaveStatus("Saved");
 }
 
 function scheduleSave() {
     if (isInitializing) return;
+    invalidatePdfCache();
     clearTimeout(saveTimer);
     setSaveStatus("Saving…");
     saveTimer = setTimeout(saveCurrentNote, 800);
 }
 
+function updateToolbarState() {
+    noteToolbar.querySelectorAll("[data-command]").forEach((button) => {
+        const command = button.dataset.command;
+        let active = false;
+
+        try {
+            active = document.queryCommandState(command);
+        } catch (error) {
+            active = false;
+        }
+
+        button.classList.toggle("is-active", active);
+    });
+}
+
+function getSafeExportBasename() {
+    const title = getPlainText().slice(0, 40).trim() || config.assignmentTitle || config.assignmentId;
+    return title.replace(/[^\w\- ]/g, "").trim() || "assignment";
+}
+
+function updateSubmitButtonState(note) {
+    if (!submitAssignmentBtn) {
+        return;
+    }
+
+    if (note?.submittedAt) {
+        const submittedDate = new Date(note.submittedAt).toLocaleString();
+        submitAssignmentBtn.textContent = "Resubmit";
+        submitAssignmentBtn.classList.add("is-submitted");
+        submitAssignmentBtn.title = `Last submitted ${submittedDate}. Click to submit again.`;
+        return;
+    }
+
+    submitAssignmentBtn.textContent = "Submit";
+    submitAssignmentBtn.classList.remove("is-submitted");
+    submitAssignmentBtn.title = "Submit assignment to Google Drive";
+}
+
+async function submitAssignment() {
+    if (!pleadingEditor || submitAssignmentBtn.disabled) {
+        return;
+    }
+
+    const plainText = getPlainText();
+    if (!plainText) {
+        alert("Your assignment is empty. Add text before submitting.");
+        return;
+    }
+
+    const isResubmit = submitAssignmentBtn.classList.contains("is-submitted");
+    if (isResubmit) {
+        const confirmed = window.confirm(
+            "Are you sure you want to resubmit?\n\nThis will replace any previously submitted version."
+        );
+        if (!confirmed) {
+            return;
+        }
+    }
+
+    logSystemInteraction({
+        eventType: "click",
+        elementName: isResubmit ? "Resubmit Assignment" : "Submit Assignment",
+        page: "assignment",
+        eventProps: { assignmentId: config.assignmentId, format: "pdf" },
+    });
+
+    submitAssignmentBtn.disabled = true;
+    exportPdfBtn.disabled = true;
+    await beginNotesBusy("Please wait for submission confirmation…");
+
+    try {
+        const [, pdfBlob] = await Promise.all([
+            saveCurrentNote(),
+            getOrBuildPdfBlob(),
+        ]);
+
+        const formData = new FormData();
+        formData.append("pdf", pdfBlob, `${getSafeExportBasename()}.pdf`);
+        formData.append("participantID", config.participantID);
+        formData.append("assignmentId", config.assignmentId);
+        formData.append("sessionID", config.sessionID);
+        formData.append("systemID", config.systemID);
+        formData.append("title", getNoteTitle());
+
+        const response = await fetch("/api/assignments/submit", {
+            method: "POST",
+            body: formData,
+        });
+
+        const result = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(result.error || "Submission failed");
+        }
+
+        updateSubmitButtonState({
+            submittedAt: result.submittedAt,
+        });
+
+        if (result.warning) {
+            alert(
+                `Your assignment was saved on the server.\n\n${result.warning}`
+            );
+            return;
+        }
+
+        const destination =
+            result.storage === "local" ? "the server" : "Google Drive";
+        alert(`Your assignment was submitted successfully to ${destination}.`);
+    } catch (error) {
+        console.error("Submission error:", error);
+        alert(error.message || "Could not submit assignment. Please try again.");
+    } finally {
+        submitAssignmentBtn.disabled = false;
+        exportPdfBtn.disabled = false;
+        endNotesBusy();
+    }
+}
+
+async function exportNotePdf() {
+    if (!pleadingEditor || exportPdfBtn.disabled) {
+        return;
+    }
+
+    logSystemInteraction({
+        eventType: "click",
+        elementName: "Export PDF",
+        page: "assignment",
+        eventProps: { assignmentId: config.assignmentId, format: "pdf" },
+    });
+
+    exportPdfBtn.disabled = true;
+    submitAssignmentBtn.disabled = true;
+    await beginNotesBusy("Creating your PDF. Please wait…");
+
+    try {
+        const [, pdfBlob] = await Promise.all([
+            saveCurrentNote(),
+            getOrBuildPdfBlob(),
+        ]);
+
+        await exportPleadingPdf({
+            basename: getSafeExportBasename(),
+            blob: pdfBlob,
+        });
+    } catch (error) {
+        console.error("PDF export error:", error);
+        alert(
+            error?.message
+                ? `Could not create PDF: ${error.message}`
+                : "Could not create PDF. Please try again."
+        );
+    } finally {
+        exportPdfBtn.disabled = false;
+        submitAssignmentBtn.disabled = false;
+        endNotesBusy();
+    }
+}
+
+function bindToolbar() {
+    noteToolbar.querySelectorAll("[data-command]").forEach((button) => {
+        button.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+        });
+
+        button.addEventListener("click", (event) => {
+            event.preventDefault();
+            document.execCommand(button.dataset.command, false, null);
+            pleadingEditor.focus();
+            updateToolbarState();
+            scheduleSave();
+        });
+    });
+
+    noteToolbar.querySelectorAll("[data-insert]").forEach((button) => {
+        button.addEventListener("mousedown", (event) => {
+            event.preventDefault();
+        });
+
+        button.addEventListener("click", (event) => {
+            event.preventDefault();
+            pleadingEditor.focus();
+            document.execCommand("insertText", false, button.dataset.insert);
+            updateToolbarState();
+            scheduleSave();
+        });
+    });
+
+    document.addEventListener("selectionchange", () => {
+        if (!noteEditorEl.contains(document.getSelection()?.anchorNode)) {
+            return;
+        }
+        updateToolbarState();
+    });
+
+    exportPdfBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        exportNotePdf();
+    });
+
+    submitAssignmentBtn.addEventListener("click", (event) => {
+        event.preventDefault();
+        submitAssignment();
+    });
+}
+
+noteEditorEl.addEventListener("copy", () => {
+    logSystemInteraction({
+        eventType: "copy",
+        elementName: "note-editor",
+        page: "assignment",
+        eventProps: { assignmentId: config.assignmentId },
+    });
+});
+
+noteEditorEl.addEventListener("paste", () => {
+    logSystemInteraction({
+        eventType: "paste",
+        elementName: "note-editor",
+        page: "assignment",
+        eventProps: { assignmentId: config.assignmentId },
+    });
+});
+
 async function initNote() {
+    pleadingEditor = new PleadingEditor({
+        spec: pleadingSpec,
+        paperEl: pleadingPaperEl,
+        scaleSizerEl: pleadingScaleSizerEl,
+        scaleFrameEl: pleadingScaleFrameEl,
+        backdropEl: pleadingBackdropEl,
+        scrollSurfaceEl: pleadingScrollSurfaceEl,
+        editorEl: noteEditorEl,
+        onChange: scheduleSave,
+    });
+
+    bindToolbar();
     setSaveStatus("Loading…");
 
     const url =
-        `/api/notes/current?participantID=${encodeURIComponent(config.participantID)}` +
+        `/api/assignments/current?participantID=${encodeURIComponent(config.participantID)}` +
         `&assignmentId=${encodeURIComponent(config.assignmentId)}`;
 
     try {
@@ -280,15 +455,16 @@ async function initNote() {
 
         if (response.ok) {
             const note = await response.json();
-            setNoteContent(note.content || "");
-            setSaveStatus(`Loaded (v${note.version})`);
+            setEditorHtml(parseNoteContent(note.content || ""));
+            invalidatePdfCache();
+            updateSubmitButtonState(note);
+            setSaveStatus("Loaded");
             return;
         }
 
         if (response.status === 404) {
-            const html = await loadTemplateHtml();
-            setNoteContent(html);
-            setSaveStatus("New document");
+            setEditorHtml("<p><br></p>");
+            setSaveStatus("New note");
             await saveCurrentNote();
             return;
         }
@@ -298,67 +474,9 @@ async function initNote() {
         setSaveStatus("Load failed");
     } finally {
         isInitializing = false;
-        updateLineNumbers();
     }
 }
 
-exportMenuBtn.addEventListener("click", (event) => {
-    event.stopPropagation();
-    toggleExportMenu();
-});
-
-exportMenuList.addEventListener("click", (event) => {
-    const item = event.target.closest("[data-export]");
-    if (!item) return;
-    handleExportChoice(item.dataset.export);
-});
-
-document.addEventListener("click", (event) => {
-    if (!exportMenu.contains(event.target)) {
-        closeExportMenu();
-    }
-});
-
-document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape") {
-        closeExportMenu();
-    }
-});
-
 initNote();
 
-pleadingQuill.on("text-change", () => {
-    scheduleSave();
-    scheduleLineNumberUpdate();
-});
 
-updateLineNumbers();
-
-pleadingQuill.on("selection-change", (range) => {
-    if (range && range.length > 0) {
-        logSystemInteraction({
-            eventType: "quill-highlight",
-            elementName: "pleading-editor",
-            page: "notes",
-            eventProps: { assignmentId: config.assignmentId },
-        });
-    }
-});
-
-pleadingQuill.root.addEventListener("paste", () => {
-    logSystemInteraction({
-        eventType: "paste",
-        elementName: "pleading-editor",
-        page: "notes",
-        eventProps: { assignmentId: config.assignmentId },
-    });
-});
-
-pleadingQuill.root.addEventListener("copy", () => {
-    logSystemInteraction({
-        eventType: "copy",
-        elementName: "pleading-editor",
-        page: "notes",
-        eventProps: { assignmentId: config.assignmentId },
-    });
-});

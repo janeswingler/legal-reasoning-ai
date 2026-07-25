@@ -3,15 +3,170 @@ const chatForm = document.getElementById("chatForm");
 const chatInput = document.getElementById("chatInput");
 const chatSessionList = document.getElementById("chatSessionList");
 const newChatBtn = document.getElementById("newChatBtn");
-const chatAttachmentsEl = document.getElementById("chatAttachments");
-const chatAttachmentList = document.getElementById("chatAttachmentList");
+const chatComposerPending = document.getElementById("chatComposerPending");
+const chatComposerPendingList = document.getElementById("chatComposerPendingList");
 const attachFileBtn = document.getElementById("attachFileBtn");
 const chatFileInput = document.getElementById("chatFileInput");
+const sendBtn = document.getElementById("sendBtn");
+const chatLayout = document.getElementById("chatLayout");
+const chatSidebarToggle = document.getElementById("chatSidebarToggle");
+
+// systemID=1 is editor-only — do not initialize chat.
+if (!config.isAiEnabled || !chatForm || !sendBtn) {
+    // Skip chat bootstrap.
+} else {
+const sendBtnIcon = sendBtn.querySelector(".chat-composer__send-icon");
 
 const WELCOME_MESSAGE =
     "Hi, I am your legal AI assistant. Ask a question about your assignment when you are ready.";
 
+const SEND_ICON_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+    <path
+        d="M12 19V5"
+        stroke="currentColor"
+        stroke-width="3"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+    />
+    <path
+        d="M5 12l7-7 7 7"
+        stroke="currentColor"
+        stroke-width="3"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+    />
+</svg>`;
+
+const STOP_ICON_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" />
+</svg>`;
+
 let currentChatSessionId = null;
+let pendingAttachments = [];
+let chatBusy = false;
+let activeChatAbortController = null;
+let streamAbortRequested = false;
+
+const PDF_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path
+        d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8l-6-6Z"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+    />
+    <path
+        d="M14 2v6h6M9 13h6M9 17h4"
+        stroke="currentColor"
+        stroke-width="1.75"
+        stroke-linecap="round"
+        stroke-linejoin="round"
+    />
+</svg>`;
+
+function attachmentStatusText(attachment) {
+    if (attachment.status === "processing") {
+        return "Processing…";
+    }
+    if (attachment.status === "failed") {
+        return "Failed";
+    }
+    return null;
+}
+
+function normalizeAttachments(attachments) {
+    if (!Array.isArray(attachments)) {
+        return [];
+    }
+
+    return attachments
+        .map((attachment) => {
+            if (!attachment) {
+                return null;
+            }
+
+            if (typeof attachment === "string") {
+                return { _id: attachment, originalFilename: "Attached PDF" };
+            }
+
+            return attachment;
+        })
+        .filter(Boolean);
+}
+
+function createMessageAttachmentEl(attachment) {
+    const item = document.createElement("div");
+    item.className = "message-attachment";
+
+    const icon = document.createElement("span");
+    icon.className = "message-attachment__icon";
+    icon.innerHTML = PDF_ICON_SVG;
+
+    const name = document.createElement("span");
+    name.className = "message-attachment__name";
+    name.textContent = attachment.originalFilename;
+    name.title = attachment.originalFilename;
+
+    item.appendChild(icon);
+    item.appendChild(name);
+    return item;
+}
+
+function createPendingAttachmentEl(attachment) {
+    const item = document.createElement("li");
+    item.className = "chat-pending-attachment";
+    item.dataset.attachmentId = attachment._id;
+
+    const icon = document.createElement("span");
+    icon.className = "chat-pending-attachment__icon";
+    icon.innerHTML = PDF_ICON_SVG;
+
+    const name = document.createElement("span");
+    name.className = "chat-pending-attachment__name";
+    name.textContent = attachment.originalFilename;
+    name.title = attachment.originalFilename;
+
+    item.appendChild(icon);
+    item.appendChild(name);
+
+    const statusText = attachmentStatusText(attachment);
+    if (statusText) {
+        const status = document.createElement("span");
+        status.className = "chat-pending-attachment__status";
+        status.textContent = statusText;
+        item.appendChild(status);
+    }
+
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "chat-pending-attachment__remove";
+    removeBtn.setAttribute("aria-label", `Remove ${attachment.originalFilename}`);
+    removeBtn.textContent = "×";
+    removeBtn.addEventListener("click", () => removePendingAttachment(attachment._id));
+
+    item.appendChild(removeBtn);
+
+    return item;
+}
+
+function renderPendingAttachments() {
+    chatComposerPendingList.innerHTML = "";
+
+    if (!pendingAttachments.length) {
+        chatComposerPending.hidden = true;
+        return;
+    }
+
+    chatComposerPending.hidden = false;
+    pendingAttachments.forEach((attachment) => {
+        chatComposerPendingList.appendChild(createPendingAttachmentEl(attachment));
+    });
+}
+
+function setPendingAttachments(attachments) {
+    pendingAttachments = attachments;
+    renderPendingAttachments();
+}
 
 function chatSessionStorageKey() {
     return `lrai_chatSession_${config.assignmentId}`;
@@ -41,26 +196,232 @@ function sessionCreatePayload() {
 function sessionQuery() {
     return (
         `participantID=${encodeURIComponent(config.participantID)}` +
-        `&assignmentId=${encodeURIComponent(config.assignmentId)}`
+        `&assignmentId=${encodeURIComponent(config.assignmentId)}` +
+        `&systemID=${encodeURIComponent(config.systemID)}`
     );
 }
 
-function appendMessage(role, text) {
+function chatInteractionProps(extra = {}) {
+    return {
+        chatSessionId: currentChatSessionId,
+        ...extra,
+    };
+}
+
+function getChatMessageRoleFromNode(node) {
+    const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+    const message = element?.closest?.(".message");
+    if (!message || !chatLog.contains(message)) {
+        return null;
+    }
+    if (message.classList.contains("message--user")) {
+        return "user";
+    }
+    if (message.classList.contains("message--assistant")) {
+        return "assistant";
+    }
+    return null;
+}
+
+function renderAssistantHtml(text) {
+    if (typeof marked !== "undefined" && typeof marked.parse === "function") {
+        return marked.parse(text, { breaks: true, gfm: true });
+    }
+
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML.replace(/\n/g, "<br>");
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function escapeHtml(text) {
+    return String(text)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;");
+}
+
+function getStreamTokens(text) {
+    return String(text).match(/\S+\s*|\s+/g) || [String(text)];
+}
+
+function getStreamPace(tokenCount) {
+    const targetMs = Math.min(5500, Math.max(1800, tokenCount * 90));
+    const frameMs = 42;
+    const steps = Math.max(1, Math.ceil(targetMs / frameMs));
+    return {
+        tokensPerStep: 1,
+        delayMs: Math.max(frameMs, Math.floor(targetMs / Math.max(1, tokenCount))),
+    };
+}
+
+const CHAT_SCROLL_PIN_THRESHOLD = 48;
+
+let chatAutoScrollEnabled = true;
+let chatScrollProgrammatic = false;
+let chatLastTouchY = null;
+
+function isChatLogPinnedToBottom() {
+    const distance = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight;
+    return distance <= CHAT_SCROLL_PIN_THRESHOLD;
+}
+
+function scrollChatLogToBottom({ force = false } = {}) {
+    if (force) {
+        chatAutoScrollEnabled = true;
+    }
+    if (!chatAutoScrollEnabled) {
+        return;
+    }
+
+    chatScrollProgrammatic = true;
+    chatLog.scrollTop = chatLog.scrollHeight;
+    chatScrollProgrammatic = false;
+}
+
+function disableChatAutoScroll() {
+    chatAutoScrollEnabled = false;
+}
+
+chatLog.addEventListener(
+    "scroll",
+    () => {
+        if (chatScrollProgrammatic) {
+            return;
+        }
+        chatAutoScrollEnabled = isChatLogPinnedToBottom();
+    },
+    { passive: true }
+);
+
+chatLog.addEventListener(
+    "wheel",
+    (event) => {
+        if (event.deltaY < 0) {
+            disableChatAutoScroll();
+        }
+    },
+    { passive: true }
+);
+
+chatLog.addEventListener(
+    "touchstart",
+    (event) => {
+        chatLastTouchY = event.touches[0]?.clientY ?? null;
+    },
+    { passive: true }
+);
+
+chatLog.addEventListener(
+    "touchmove",
+    (event) => {
+        const touchY = event.touches[0]?.clientY;
+        if (touchY != null && chatLastTouchY != null && touchY > chatLastTouchY) {
+            disableChatAutoScroll();
+        }
+        chatLastTouchY = touchY ?? null;
+    },
+    { passive: true }
+);
+
+document.addEventListener("keydown", (event) => {
+    if (!["ArrowUp", "PageUp", "Home"].includes(event.key)) {
+        return;
+    }
+    if (!chatLog.contains(document.activeElement) && !chatLog.matches(":hover")) {
+        return;
+    }
+    disableChatAutoScroll();
+});
+
+function appendMessage(role, text, attachments = []) {
+    const normalizedAttachments = normalizeAttachments(attachments);
     const messageEl = document.createElement("div");
     messageEl.classList.add("message", role === "user" ? "message--user" : "message--assistant");
 
-    const roleEl = document.createElement("span");
-    roleEl.classList.add("message__role");
-    roleEl.textContent = role === "user" ? "You" : "Assistant";
-
-    const textEl = document.createElement("p");
+    const textEl = document.createElement("div");
     textEl.classList.add("message__text");
-    textEl.textContent = text;
 
-    messageEl.appendChild(roleEl);
+    if (role === "assistant") {
+        textEl.innerHTML = renderAssistantHtml(text);
+    } else {
+        textEl.textContent = text;
+    }
+
     messageEl.appendChild(textEl);
-    chatLog.appendChild(messageEl);
-    chatLog.scrollTop = chatLog.scrollHeight;
+
+    let rowEl = messageEl;
+    if (role === "user" && normalizedAttachments.length > 0) {
+        rowEl = document.createElement("div");
+        rowEl.classList.add("message-group", "message-group--user");
+
+        const attachmentsEl = document.createElement("div");
+        attachmentsEl.classList.add("message-group__attachments");
+        normalizedAttachments.forEach((attachment) => {
+            attachmentsEl.appendChild(createMessageAttachmentEl(attachment));
+        });
+
+        rowEl.appendChild(attachmentsEl);
+        rowEl.appendChild(messageEl);
+    }
+
+    chatLog.appendChild(rowEl);
+    scrollChatLogToBottom({ force: role === "user" });
+    return { messageEl, textEl, rowEl };
+}
+
+async function appendAssistantMessageAnimated(text) {
+    const fullText = String(text || "");
+    const { messageEl, textEl } = appendMessage("assistant", "");
+    messageEl.classList.add("message--streaming");
+    textEl.classList.add("message__text--streaming");
+
+    if (!fullText) {
+        messageEl.classList.remove("message--streaming");
+        textEl.classList.remove("message__text--streaming");
+        return { messageEl, textEl, stopped: false };
+    }
+
+    if (streamAbortRequested) {
+        messageEl.remove();
+        return { messageEl, textEl, stopped: true };
+    }
+
+    const tokens = getStreamTokens(fullText);
+    const { tokensPerStep, delayMs } = getStreamPace(tokens.length);
+    let shownCount = 0;
+    let stopped = false;
+
+    while (shownCount < tokens.length) {
+        if (streamAbortRequested) {
+            stopped = true;
+            break;
+        }
+        shownCount = Math.min(tokens.length, shownCount + tokensPerStep);
+        const partial = tokens.slice(0, shownCount).join("");
+        textEl.innerHTML = renderAssistantHtml(partial);
+        scrollChatLogToBottom();
+        await sleep(delayMs);
+    }
+
+    if (stopped && shownCount === 0) {
+        messageEl.remove();
+    } else {
+        const finalText = stopped
+            ? tokens.slice(0, shownCount).join("")
+            : fullText;
+        textEl.innerHTML = renderAssistantHtml(finalText);
+        messageEl.classList.remove("message--streaming");
+        textEl.classList.remove("message__text--streaming");
+        textEl.setAttribute("aria-live", "polite");
+        scrollChatLogToBottom();
+    }
+
+    return { messageEl, textEl, stopped };
 }
 
 let typingIndicatorEl = null;
@@ -70,21 +431,15 @@ function showTypingIndicator() {
 
     typingIndicatorEl = document.createElement("div");
     typingIndicatorEl.className = "message message--assistant message--typing";
-    typingIndicatorEl.setAttribute("aria-live", "polite");
     typingIndicatorEl.setAttribute("aria-label", "Assistant is typing");
-
-    const roleEl = document.createElement("span");
-    roleEl.className = "message__role";
-    roleEl.textContent = "Assistant";
 
     const dotsEl = document.createElement("div");
     dotsEl.className = "typing-indicator";
     dotsEl.innerHTML = "<span></span><span></span><span></span>";
 
-    typingIndicatorEl.appendChild(roleEl);
     typingIndicatorEl.appendChild(dotsEl);
     chatLog.appendChild(typingIndicatorEl);
-    chatLog.scrollTop = chatLog.scrollHeight;
+    scrollChatLogToBottom();
 }
 
 function hideTypingIndicator() {
@@ -113,9 +468,10 @@ function renderHistory(exchanges) {
     }
 
     exchanges.forEach((exchange) => {
-        appendMessage("user", exchange.userInput);
+        appendMessage("user", exchange.userInput, exchange.attachmentIds);
         appendMessage("assistant", exchange.botResponse);
     });
+    scrollChatLogToBottom({ force: true });
 }
 
 function setActiveSessionItem(chatSessionId) {
@@ -163,11 +519,9 @@ async function loadConversationHistory(chatSessionId) {
     renderHistory(exchanges);
 }
 
-async function loadAttachments() {
-    chatAttachmentList.innerHTML = "";
-
+async function loadPendingAttachments() {
     if (!currentChatSessionId) {
-        chatAttachmentsEl.hidden = true;
+        setPendingAttachments([]);
         return;
     }
 
@@ -176,53 +530,15 @@ async function loadAttachments() {
     );
 
     if (!response.ok) {
-        chatAttachmentsEl.hidden = true;
+        setPendingAttachments([]);
         return;
     }
 
     const { attachments } = await response.json();
-
-    if (!attachments.length) {
-        chatAttachmentsEl.hidden = true;
-        return;
-    }
-
-    chatAttachmentsEl.hidden = false;
-
-    attachments.forEach((attachment) => {
-        const item = document.createElement("li");
-        item.className = "chat-attachment-chip";
-
-        const name = document.createElement("span");
-        name.className = "chat-attachment-chip__name";
-        name.textContent = attachment.originalFilename;
-        name.title = attachment.originalFilename;
-
-        const status = document.createElement("span");
-        status.className = "chat-attachment-chip__status";
-        if (attachment.status === "processing") {
-            status.textContent = "Processing…";
-        } else if (attachment.status === "failed") {
-            status.textContent = "Failed";
-        } else {
-            status.textContent = `${attachment.chunkCount} sections`;
-        }
-
-        const removeBtn = document.createElement("button");
-        removeBtn.type = "button";
-        removeBtn.className = "chat-attachment-chip__remove";
-        removeBtn.setAttribute("aria-label", `Remove ${attachment.originalFilename}`);
-        removeBtn.textContent = "×";
-        removeBtn.addEventListener("click", () => deleteAttachment(attachment._id));
-
-        item.appendChild(name);
-        item.appendChild(status);
-        item.appendChild(removeBtn);
-        chatAttachmentList.appendChild(item);
-    });
+    setPendingAttachments(attachments);
 }
 
-async function deleteAttachment(attachmentId) {
+async function removePendingAttachment(attachmentId) {
     if (!currentChatSessionId) return;
 
     const response = await fetch(
@@ -235,19 +551,29 @@ async function deleteAttachment(attachmentId) {
         return;
     }
 
-    await loadAttachments();
+    pendingAttachments = pendingAttachments.filter(
+        (attachment) => String(attachment._id) !== String(attachmentId)
+    );
+    renderPendingAttachments();
+}
+
+function setAttachUploading(isUploading) {
+    attachFileBtn.disabled = isUploading;
+    attachFileBtn.classList.toggle("is-uploading", isUploading);
+    attachFileBtn.setAttribute("aria-busy", isUploading ? "true" : "false");
+    attachFileBtn.setAttribute("aria-label", isUploading ? "Uploading PDF" : "Attach PDF");
 }
 
 async function uploadAttachment(file) {
-    const chatSessionId = await ensureChatSession();
-    const formData = new FormData();
-    formData.append("file", file);
-    formData.append("participantID", config.participantID);
-    formData.append("assignmentId", config.assignmentId);
-
-    attachFileBtn.disabled = true;
+    setAttachUploading(true);
 
     try {
+        const chatSessionId = await ensureChatSession();
+        const formData = new FormData();
+        formData.append("file", file);
+        formData.append("participantID", config.participantID);
+        formData.append("assignmentId", config.assignmentId);
+
         const response = await fetch(
             `/api/chat/sessions/${encodeURIComponent(chatSessionId)}/attachments?${sessionQuery()}`,
             {
@@ -262,6 +588,8 @@ async function uploadAttachment(file) {
             return;
         }
 
+        const { attachment } = await response.json();
+
         logSystemInteraction({
             eventType: "upload",
             elementName: "Chat PDF Attachment",
@@ -269,9 +597,10 @@ async function uploadAttachment(file) {
             eventProps: { filename: file.name },
         });
 
-        await loadAttachments();
+        pendingAttachments.push(attachment);
+        renderPendingAttachments();
     } finally {
-        attachFileBtn.disabled = false;
+        setAttachUploading(false);
         chatFileInput.value = "";
     }
 }
@@ -281,7 +610,7 @@ async function selectSession(chatSessionId) {
     setStoredChatSessionId(chatSessionId);
     setActiveSessionItem(chatSessionId);
     await loadConversationHistory(chatSessionId);
-    await loadAttachments();
+    await loadPendingAttachments();
 }
 
 async function createChatSession() {
@@ -314,8 +643,7 @@ function startNewChat() {
     currentChatSessionId = null;
     setStoredChatSessionId(null);
     showWelcomeMessage();
-    chatAttachmentsEl.hidden = true;
-    chatAttachmentList.innerHTML = "";
+    setPendingAttachments([]);
     chatSessionList.querySelectorAll(".chat-sidebar__item").forEach((item) => {
         item.classList.remove("is-active");
     });
@@ -351,27 +679,78 @@ async function initChat() {
     }
 }
 
+function setChatBusy(busy) {
+    chatBusy = busy;
+    updateSendButtonState();
+}
+
+function updateSendButtonState() {
+    if (chatBusy) {
+        sendBtn.disabled = false;
+        sendBtn.type = "button";
+        sendBtn.classList.add("chat-composer__send--stop");
+        sendBtn.setAttribute("aria-label", "Stop generating");
+        sendBtnIcon.innerHTML = STOP_ICON_SVG;
+        return;
+    }
+
+    sendBtn.type = "submit";
+    sendBtn.classList.remove("chat-composer__send--stop");
+    sendBtn.setAttribute("aria-label", "Send message");
+    sendBtnIcon.innerHTML = SEND_ICON_SVG;
+    sendBtn.disabled = chatInput.value.trim().length === 0;
+}
+
+function stopChatGeneration() {
+    streamAbortRequested = true;
+    if (activeChatAbortController) {
+        activeChatAbortController.abort();
+        activeChatAbortController = null;
+    }
+}
+
+function resizeChatInput() {
+    chatInput.style.height = "auto";
+    chatInput.style.height = `${chatInput.scrollHeight}px`;
+}
+
+sendBtn.addEventListener("click", (event) => {
+    if (!chatBusy) return;
+    event.preventDefault();
+    logSystemInteraction({ eventType: "click", elementName: "Stop Button", page: "chat" });
+    stopChatGeneration();
+});
+
 chatForm.addEventListener("submit", async (event) => {
     event.preventDefault();
+
+    if (chatBusy) return;
 
     const text = chatInput.value.trim();
     if (!text) return;
 
     logSystemInteraction({ eventType: "click", elementName: "Send Button", page: "chat" });
 
-    const sendBtn = chatForm.querySelector('button[type="submit"]');
-    sendBtn.disabled = true;
-    chatInput.disabled = true;
+    streamAbortRequested = false;
+    activeChatAbortController = new AbortController();
+    const { signal } = activeChatAbortController;
+    setChatBusy(true);
 
     try {
         const chatSessionId = await ensureChatSession();
-        appendMessage("user", text);
+        const attachmentsForMessage = [...pendingAttachments];
+        const attachmentIds = attachmentsForMessage.map((attachment) => attachment._id);
+
+        appendMessage("user", text, attachmentsForMessage);
+        setPendingAttachments([]);
         chatInput.value = "";
+        resizeChatInput();
         showTypingIndicator();
 
         const response = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            signal,
             body: JSON.stringify({
                 participantID: config.participantID,
                 sessionID: config.sessionID,
@@ -379,6 +758,7 @@ chatForm.addEventListener("submit", async (event) => {
                 systemID: config.systemID,
                 assignmentId: config.assignmentId,
                 userInput: text,
+                attachmentIds,
             }),
         });
 
@@ -390,23 +770,74 @@ chatForm.addEventListener("submit", async (event) => {
                 errorText = "Chat is not configured yet. Please contact the study administrator.";
             }
             appendMessage("assistant", errorText);
+            await loadPendingAttachments();
             return;
         }
 
         const exchange = await response.json();
-        appendMessage("assistant", exchange.botResponse);
+        if (streamAbortRequested) {
+            return;
+        }
+        await appendAssistantMessageAnimated(exchange.botResponse);
         await loadSessions();
     } catch (error) {
         hideTypingIndicator();
+        if (error?.name === "AbortError") {
+            return;
+        }
         appendMessage("assistant", "Sorry, something went wrong.");
+        await loadPendingAttachments();
     } finally {
-        sendBtn.disabled = false;
-        chatInput.disabled = false;
+        activeChatAbortController = null;
+        streamAbortRequested = false;
+        setChatBusy(false);
         chatInput.focus();
     }
 });
 
+chatInput.addEventListener("input", () => {
+    resizeChatInput();
+    updateSendButtonState();
+});
+
+chatInput.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        if (chatBusy || sendBtn.disabled) return;
+        chatForm.requestSubmit();
+    }
+});
+
+resizeChatInput();
+
 newChatBtn.addEventListener("click", startNewChat);
+
+function setChatSidebarCollapsed(collapsed) {
+    if (!chatLayout || !chatSidebarToggle) {
+        return;
+    }
+
+    chatLayout.classList.toggle("is-sidebar-collapsed", collapsed);
+    chatSidebarToggle.setAttribute("aria-expanded", collapsed ? "false" : "true");
+    const label = collapsed ? "Open sidebar" : "Close sidebar";
+    chatSidebarToggle.setAttribute("aria-label", label);
+    chatSidebarToggle.setAttribute("data-tooltip", label);
+    chatSidebarToggle.removeAttribute("title");
+}
+
+if (chatSidebarToggle && chatLayout) {
+    setChatSidebarCollapsed(false);
+
+    chatSidebarToggle.addEventListener("click", () => {
+        const nextCollapsed = !chatLayout.classList.contains("is-sidebar-collapsed");
+        setChatSidebarCollapsed(nextCollapsed);
+        logSystemInteraction({
+            eventType: "click",
+            elementName: nextCollapsed ? "Hide Chat Sidebar" : "Show Chat Sidebar",
+            page: "chat",
+        });
+    });
+}
 
 attachFileBtn.addEventListener("click", () => {
     chatFileInput.click();
@@ -418,5 +849,33 @@ chatFileInput.addEventListener("change", async () => {
     await uploadAttachment(file);
 });
 
-showWelcomeMessage();
+chatLog.addEventListener("copy", () => {
+    const selection = document.getSelection();
+    if (!selection || selection.isCollapsed) {
+        return;
+    }
+
+    const messageRole = getChatMessageRoleFromNode(selection.anchorNode);
+    if (!messageRole) {
+        return;
+    }
+
+    logSystemInteraction({
+        eventType: "copy",
+        elementName: "chat-message",
+        page: "chat",
+        eventProps: chatInteractionProps({ messageRole }),
+    });
+});
+
+chatInput.addEventListener("paste", () => {
+    logSystemInteraction({
+        eventType: "paste",
+        elementName: "chat-input",
+        page: "chat",
+        eventProps: chatInteractionProps(),
+    });
+});
+
 initChat();
+} // end AI-enabled chat bootstrap

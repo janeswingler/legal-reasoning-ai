@@ -1,7 +1,7 @@
 const bm25 = require("wink-bm25-text-search");
 const nlp = require("wink-nlp-utils");
-const DocumentChunk = require("../models/DocumentChunk.js");
-const { embedQuery } = require("./openai.js");
+const documentChunksDb = require("../db/documentChunks.js");
+const { embedQuery } = require("./embeddings.js");
 const {
     RETRIEVE_CANDIDATES,
     TOP_K,
@@ -166,7 +166,7 @@ async function retrieveChunksForSession(chatSessionId, query, limit = TOP_K) {
 }
 
 async function retrieveWithMeta(chatSessionId, query, limit = TOP_K) {
-    const chunks = await DocumentChunk.find({ chatSessionId }).sort({ chunkIndex: 1 });
+    const chunks = await documentChunksDb.findBySessionId(chatSessionId);
 
     if (!chunks.length || !query?.trim()) {
         return { chunks: [], scores: [], ragVersion: RAG_VERSION };

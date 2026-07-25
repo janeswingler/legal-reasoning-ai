@@ -11,3 +11,9 @@ Thumbs.db
 uploads/
 test-db.js
 public/assets/*.docx
+google-service-account.json
+*-service-account.json
+
+# Local test artifacts (not for deploy)
+tmp-*
+*.pdf

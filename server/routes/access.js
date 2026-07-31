@@ -28,7 +28,7 @@ router.post("/verify", (req, res) => {
     let assignmentId;
     try {
         participantID = sanitizeId(req.body?.participantID, "Participant ID");
-        assignmentId = sanitizeId(req.body?.assignmentId, "Assignment ID");
+        assignmentId = sanitizeId(req.body?.assignmentId, "Week");
     } catch (error) {
         return res.status(400).json({ error: error.message });
     }

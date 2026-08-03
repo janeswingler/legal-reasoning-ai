@@ -1,7 +1,16 @@
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
-const puppeteer = require("puppeteer");
+
+let puppeteerModule = null;
+
+async function loadPuppeteer() {
+    if (!puppeteerModule) {
+        const imported = await import("puppeteer");
+        puppeteerModule = imported.default ?? imported;
+    }
+    return puppeteerModule;
+}
 
 /**
  * Renders pleading HTML to a text-based PDF using headless Chrome.
@@ -133,16 +142,18 @@ function buildBootstrapHtml() {
 
 async function getBrowser() {
     if (!browserPromise) {
-        browserPromise = puppeteer
-            .launch({
-                headless: true,
-                args: [
-                    "--no-sandbox",
-                    "--disable-dev-shm-usage",
-                    "--allow-file-access-from-files",
-                    "--font-render-hinting=none",
-                ],
-            })
+        browserPromise = loadPuppeteer()
+            .then((puppeteer) =>
+                puppeteer.launch({
+                    headless: true,
+                    args: [
+                        "--no-sandbox",
+                        "--disable-dev-shm-usage",
+                        "--allow-file-access-from-files",
+                        "--font-render-hinting=none",
+                    ],
+                })
+            )
             .catch((error) => {
                 // Do not cache a failed launch, or every later request inherits it.
                 browserPromise = null;

@@ -1,3 +1,19 @@
+function getContainingListItem(node, editorEl) {
+    let current = node;
+    while (current && current !== editorEl) {
+        if (current.nodeType === Node.ELEMENT_NODE && current.tagName === "LI") {
+            return current;
+        }
+        current = current.parentNode;
+    }
+    return null;
+}
+
+function isEmptyListItem(listItem) {
+    const text = listItem.textContent.replace(/\u200b/gi, "").trim();
+    return text === "" && !listItem.querySelector("img, table, ul, ol");
+}
+
 class PleadingEditor {
     constructor({
         spec,
@@ -38,6 +54,7 @@ class PleadingEditor {
             this.scheduleLayout();
         });
         this.editorEl.addEventListener("paste", (event) => this.handlePaste(event));
+        this.editorEl.addEventListener("keydown", (event) => this.handleKeydown(event));
 
         if (typeof ResizeObserver !== "undefined") {
             this.resizeObserver = new ResizeObserver(() => this.scheduleViewportScale());
@@ -65,6 +82,39 @@ class PleadingEditor {
         event.preventDefault();
         const text = event.clipboardData?.getData("text/plain") ?? "";
         document.execCommand("insertText", false, text);
+    }
+
+    handleKeydown(event) {
+        if (event.key !== "Backspace" || this.isComposing) {
+            return;
+        }
+
+        const selection = window.getSelection();
+        if (!selection?.rangeCount || !selection.isCollapsed) {
+            return;
+        }
+
+        const listItem = getContainingListItem(selection.anchorNode, this.editorEl);
+        if (!listItem || !isEmptyListItem(listItem)) {
+            return;
+        }
+
+        const list = listItem.parentElement;
+        if (!list || (list.tagName !== "UL" && list.tagName !== "OL")) {
+            return;
+        }
+
+        event.preventDefault();
+
+        const range = document.createRange();
+        range.selectNodeContents(listItem);
+        selection.removeAllRanges();
+        selection.addRange(range);
+
+        const command =
+            list.tagName === "OL" ? "insertOrderedList" : "insertUnorderedList";
+        document.execCommand(command, false, null);
+        this.handleInput();
     }
 
     ensureBlockStructure() {

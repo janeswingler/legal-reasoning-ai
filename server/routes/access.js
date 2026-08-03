@@ -1,5 +1,5 @@
 const express = require("express");
-const { checkPassword } = require("../services/accessGate.js");
+const { checkPassword, isAccessGateEnabled } = require("../services/accessGate.js");
 const { setAccessCookie } = require("../middleware/accessGate.js");
 
 const router = express.Router();
@@ -20,7 +20,7 @@ function sanitizeId(value, fieldName) {
 
 router.post("/verify", (req, res) => {
     const password = String(req.body?.password || "");
-    if (!checkPassword(password)) {
+    if (isAccessGateEnabled() && !checkPassword(password)) {
         return res.status(401).json({ error: "Incorrect access password" });
     }
 

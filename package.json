@@ -5,6 +5,7 @@
   "main": "index.js",
   "scripts": {
     "start": "node server.js",
+    "pdf:install-browser": "npx puppeteer browsers install chrome",
     "db:init": "node server/sql/run-schema.js",
     "smoke:mysql": "node scripts/smoke-mysql.js",
     "google-drive-oauth": "node scripts/google-drive-oauth.js"

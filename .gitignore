@@ -19,3 +19,6 @@ google-service-account.json
 # Local test artifacts (not for deploy)
 tmp-*
 *.pdf
+
+# Licensed font binaries - supply per deploy (Times New Roman, or Tinos on Linux)
+server/assets/fonts/*.ttf

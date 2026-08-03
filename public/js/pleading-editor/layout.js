@@ -216,6 +216,10 @@ function splitBlockAtLineStart(block, textNode, offset) {
     const newBlock = document.createElement(tagName === "li" ? "li" : "p");
     newBlock.appendChild(tail);
 
+    // Keep alignment/indent on the continuation, or a centred paragraph that
+    // straddles a page boundary loses its formatting below the break.
+    copyBlockFormatting(block, newBlock);
+
     if (!newBlock.textContent.replace(/\u200b/gi, "").length && !newBlock.querySelector("img, table, ul, ol")) {
         newBlock.innerHTML = "<br>";
     }

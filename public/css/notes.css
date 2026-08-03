@@ -218,6 +218,27 @@ body.is-notes-busy * {
   text-decoration: underline;
 }
 
+.note-format-toolbar button[data-command="strikeThrough"] {
+  text-decoration: line-through;
+}
+
+.note-format-toolbar button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.note-format-toolbar button:disabled:hover {
+  background: transparent;
+  border-color: transparent;
+}
+
+/* Icon buttons (alignment, indent) centre their glyph rather than baseline it. */
+.note-format-toolbar button:has(svg) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .pleading-paper {
   flex: 1;
   min-height: 0;
@@ -430,6 +451,51 @@ body.is-notes-busy * {
 
 .pleading-editor li > br:first-child:only-child {
   display: none;
+}
+
+/*
+ * Block indent. Mirrors the ql-indent rules the export stylesheet generates
+ * (PleadingStylesheet.renderListRules) so the editor stays WYSIWYG with the
+ * PDF. Values must stay in step: level * 3em, and 1.5em more for list items.
+ */
+.pleading-editor .ql-indent-1 {
+  padding-left: 3em;
+}
+
+.pleading-editor .ql-indent-2 {
+  padding-left: 6em;
+}
+
+.pleading-editor .ql-indent-3 {
+  padding-left: 9em;
+}
+
+.pleading-editor .ql-indent-4 {
+  padding-left: 12em;
+}
+
+.pleading-editor .ql-indent-5 {
+  padding-left: 15em;
+}
+
+.pleading-editor li.ql-indent-1 {
+  padding-left: 4.5em;
+}
+
+.pleading-editor li.ql-indent-2 {
+  padding-left: 7.5em;
+}
+
+.pleading-editor li.ql-indent-3 {
+  padding-left: 10.5em;
+}
+
+.pleading-editor li.ql-indent-4 {
+  padding-left: 13.5em;
+}
+
+.pleading-editor li.ql-indent-5 {
+  padding-left: 16.5em;
 }
 
 .pleading-page-gap {

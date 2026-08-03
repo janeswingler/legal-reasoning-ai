@@ -220,6 +220,15 @@ function updateToolbarState() {
 
         button.classList.toggle("is-active", active);
     });
+
+    const alignment = getActiveAlignment(noteEditorEl);
+    noteToolbar.querySelectorAll("[data-align]").forEach((button) => {
+        button.classList.toggle("is-active", button.dataset.align === alignment);
+    });
+
+    noteToolbar.querySelectorAll("[data-indent]").forEach((button) => {
+        button.disabled = !canIndent(noteEditorEl, Number(button.dataset.indent));
+    });
 }
 
 function getSafeExportBasename() {
@@ -366,32 +375,57 @@ async function exportNotePdf() {
     }
 }
 
+/** Keeps focus in the editor so the selection survives the toolbar click. */
+function bindToolbarButton(button, handler) {
+    button.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+    });
+
+    button.addEventListener("click", (event) => {
+        event.preventDefault();
+        handler();
+        pleadingEditor.focus();
+        updateToolbarState();
+        scheduleSave();
+    });
+}
+
 function bindToolbar() {
     noteToolbar.querySelectorAll("[data-command]").forEach((button) => {
-        button.addEventListener("mousedown", (event) => {
-            event.preventDefault();
-        });
+        bindToolbarButton(button, () => {
+            const command = button.dataset.command;
+            document.execCommand(command, false, null);
 
-        button.addEventListener("click", (event) => {
-            event.preventDefault();
-            document.execCommand(button.dataset.command, false, null);
-            pleadingEditor.focus();
-            updateToolbarState();
-            scheduleSave();
+            // execCommand only clears inline marks; leaving text centred or
+            // indented after "clear formatting" would be surprising.
+            if (command === "removeFormat") {
+                applyBlockAlignment(noteEditorEl, "left");
+                changeBlockIndent(noteEditorEl, -PLEADING_MAX_INDENT);
+                pleadingEditor.syncLayout();
+            }
+        });
+    });
+
+    noteToolbar.querySelectorAll("[data-align]").forEach((button) => {
+        bindToolbarButton(button, () => {
+            applyBlockAlignment(noteEditorEl, button.dataset.align);
+        });
+    });
+
+    noteToolbar.querySelectorAll("[data-indent]").forEach((button) => {
+        bindToolbarButton(button, () => {
+            if (changeBlockIndent(noteEditorEl, Number(button.dataset.indent))) {
+                // Indent narrows the column, so lines rewrap and the page
+                // breaks have to be recomputed.
+                pleadingEditor.syncLayout();
+            }
         });
     });
 
     noteToolbar.querySelectorAll("[data-insert]").forEach((button) => {
-        button.addEventListener("mousedown", (event) => {
-            event.preventDefault();
-        });
-
-        button.addEventListener("click", (event) => {
-            event.preventDefault();
+        bindToolbarButton(button, () => {
             pleadingEditor.focus();
             document.execCommand("insertText", false, button.dataset.insert);
-            updateToolbarState();
-            scheduleSave();
         });
     });
 

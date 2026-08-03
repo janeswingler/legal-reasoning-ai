@@ -259,84 +259,18 @@ function getStreamPace(tokenCount) {
     };
 }
 
-const CHAT_SCROLL_PIN_THRESHOLD = 48;
-
-let chatAutoScrollEnabled = true;
-let chatScrollProgrammatic = false;
-let chatLastTouchY = null;
-
-function isChatLogPinnedToBottom() {
-    const distance = chatLog.scrollHeight - chatLog.scrollTop - chatLog.clientHeight;
-    return distance <= CHAT_SCROLL_PIN_THRESHOLD;
-}
-
-function scrollChatLogToBottom({ force = false } = {}) {
-    if (force) {
-        chatAutoScrollEnabled = true;
-    }
-    if (!chatAutoScrollEnabled) {
-        return;
-    }
-
-    chatScrollProgrammatic = true;
+/**
+ * Jumps to the newest message.
+ *
+ * Only used when a conversation is loaded or switched, where the log has just
+ * been rebuilt from scratch and there is no reading position to preserve.
+ *
+ * Sending a message and streaming a response deliberately do NOT scroll - the
+ * view stays exactly where the reader left it, and scrolling is manual only.
+ */
+function scrollChatLogToBottom() {
     chatLog.scrollTop = chatLog.scrollHeight;
-    chatScrollProgrammatic = false;
 }
-
-function disableChatAutoScroll() {
-    chatAutoScrollEnabled = false;
-}
-
-chatLog.addEventListener(
-    "scroll",
-    () => {
-        if (chatScrollProgrammatic) {
-            return;
-        }
-        chatAutoScrollEnabled = isChatLogPinnedToBottom();
-    },
-    { passive: true }
-);
-
-chatLog.addEventListener(
-    "wheel",
-    (event) => {
-        if (event.deltaY < 0) {
-            disableChatAutoScroll();
-        }
-    },
-    { passive: true }
-);
-
-chatLog.addEventListener(
-    "touchstart",
-    (event) => {
-        chatLastTouchY = event.touches[0]?.clientY ?? null;
-    },
-    { passive: true }
-);
-
-chatLog.addEventListener(
-    "touchmove",
-    (event) => {
-        const touchY = event.touches[0]?.clientY;
-        if (touchY != null && chatLastTouchY != null && touchY > chatLastTouchY) {
-            disableChatAutoScroll();
-        }
-        chatLastTouchY = touchY ?? null;
-    },
-    { passive: true }
-);
-
-document.addEventListener("keydown", (event) => {
-    if (!["ArrowUp", "PageUp", "Home"].includes(event.key)) {
-        return;
-    }
-    if (!chatLog.contains(document.activeElement) && !chatLog.matches(":hover")) {
-        return;
-    }
-    disableChatAutoScroll();
-});
 
 function appendMessage(role, text, attachments = []) {
     const normalizedAttachments = normalizeAttachments(attachments);
@@ -370,7 +304,6 @@ function appendMessage(role, text, attachments = []) {
     }
 
     chatLog.appendChild(rowEl);
-    scrollChatLogToBottom({ force: role === "user" });
     return { messageEl, textEl, rowEl };
 }
 
@@ -404,7 +337,6 @@ async function appendAssistantMessageAnimated(text) {
         shownCount = Math.min(tokens.length, shownCount + tokensPerStep);
         const partial = tokens.slice(0, shownCount).join("");
         textEl.innerHTML = renderAssistantHtml(partial);
-        scrollChatLogToBottom();
         await sleep(delayMs);
     }
 
@@ -418,7 +350,6 @@ async function appendAssistantMessageAnimated(text) {
         messageEl.classList.remove("message--streaming");
         textEl.classList.remove("message__text--streaming");
         textEl.setAttribute("aria-live", "polite");
-        scrollChatLogToBottom();
     }
 
     return { messageEl, textEl, stopped };
@@ -439,7 +370,6 @@ function showTypingIndicator() {
 
     typingIndicatorEl.appendChild(dotsEl);
     chatLog.appendChild(typingIndicatorEl);
-    scrollChatLogToBottom();
 }
 
 function hideTypingIndicator() {
@@ -471,7 +401,7 @@ function renderHistory(exchanges) {
         appendMessage("user", exchange.userInput, exchange.attachmentIds);
         appendMessage("assistant", exchange.botResponse);
     });
-    scrollChatLogToBottom({ force: true });
+    scrollChatLogToBottom();
 }
 
 function setActiveSessionItem(chatSessionId) {

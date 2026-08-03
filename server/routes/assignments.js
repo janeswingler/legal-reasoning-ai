@@ -12,6 +12,7 @@ const {
     isDriveSubmissionEnabled,
     saveSubmissionLocally,
 } = require("../services/submissionStorage.js");
+const { renderPleadingPdf } = require("../services/pdfGenerator.js");
 
 const router = express.Router();
 
@@ -142,6 +143,25 @@ router.put("/current", async (req, res) => {
         res.status(created ? 201 : 200).json(assignment);
     } catch (error) {
         res.status(400).json({ error: error.message });
+    }
+});
+
+router.post("/pdf", async (req, res) => {
+    try {
+        const { html } = req.body;
+
+        if (!html || typeof html !== "string" || !html.trim()) {
+            return res.status(400).json({ error: "html required" });
+        }
+
+        const pdf = await renderPleadingPdf(html);
+
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Length", pdf.length);
+        res.send(Buffer.from(pdf));
+    } catch (error) {
+        console.error("PDF render error:", error);
+        res.status(500).json({ error: "Could not create PDF" });
     }
 });
 

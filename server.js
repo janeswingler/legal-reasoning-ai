@@ -6,6 +6,7 @@ const https = require("https");
 const path = require("path");
 const { connectDB } = require("./server/config/db.js");
 const { accessGateMiddleware } = require("./server/middleware/accessGate.js");
+const { closeBrowser, warmUp } = require("./server/services/pdfGenerator.js");
 
 const accessRoutes = require("./server/routes/access.js");
 const assignmentsRoutes = require("./server/routes/assignments.js");
@@ -16,7 +17,8 @@ const googleAuthRoutes = require("./server/routes/googleAuth.js");
 const app = express();
 const PORT = process.env.HTTPS_PORT || process.env.PORT || 3000;
 
-app.use(express.json());
+// Pleading HTML posted to /api/assignments/pdf exceeds the 100kb default.
+app.use(express.json({ limit: "8mb" }));
 
 app.get("/api/health", (req, res) => {
     res.json({ ok: true });
@@ -34,6 +36,14 @@ app.use(express.static(path.join(__dirname, "public")));
 
 async function start() {
     await connectDB();
+
+    // Fire and forget: don't hold up listen, but have Chrome ready before the
+    // first submit so nobody pays the cold start.
+    warmUp().then((ok) => {
+        if (ok) {
+            console.log("PDF renderer warm");
+        }
+    });
 
     const certsDir = path.join(__dirname, "certs");
     const keyPath = path.join(certsDir, "cst.key");
@@ -54,6 +64,13 @@ async function start() {
             );
         });
     }
+}
+
+for (const signal of ["SIGINT", "SIGTERM"]) {
+    process.on(signal, async () => {
+        await closeBrowser();
+        process.exit(0);
+    });
 }
 
 start();

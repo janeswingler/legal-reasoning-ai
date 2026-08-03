@@ -9,7 +9,7 @@
         <link rel="stylesheet" href="./css/reset.css" />
         <link rel="stylesheet" href="./css/layout.css?v=20260711am" />
         <link rel="stylesheet" href="./css/chat.css?v=20260712c" />
-        <link rel="stylesheet" href="./css/notes.css?v=20260711ak" />
+        <link rel="stylesheet" href="./css/notes.css?v=20260731a" />
 
     </head>
     <body>
@@ -166,14 +166,56 @@
                 </div>
                 <div id="noteToolbar" class="note-format-toolbar" aria-label="Text formatting">
                     <div class="note-format-toolbar__group">
-                        <button type="button" data-command="bold" aria-label="Bold">B</button>
-                        <button type="button" data-command="italic" aria-label="Italic">I</button>
-                        <button type="button" data-command="underline" aria-label="Underline">U</button>
+                        <button type="button" data-command="undo" aria-label="Undo" title="Undo (Ctrl+Z)">&#8630;</button>
+                        <button type="button" data-command="redo" aria-label="Redo" title="Redo (Ctrl+Y)">&#8631;</button>
                     </div>
                     <div class="note-format-toolbar__group">
-                        <button type="button" data-command="insertUnorderedList" aria-label="Bullet list">•</button>
-                        <button type="button" data-command="insertOrderedList" aria-label="Numbered list">1.</button>
+                        <button type="button" data-command="bold" aria-label="Bold" title="Bold (Ctrl+B)">B</button>
+                        <button type="button" data-command="italic" aria-label="Italic" title="Italic (Ctrl+I)">I</button>
+                        <button type="button" data-command="underline" aria-label="Underline" title="Underline (Ctrl+U)">U</button>
+                        <button type="button" data-command="strikeThrough" aria-label="Strikethrough" title="Strikethrough">S</button>
+                        <button type="button" data-command="superscript" aria-label="Superscript" title="Superscript">x&sup2;</button>
+                    </div>
+                    <div class="note-format-toolbar__group">
+                        <button type="button" data-align="left" aria-label="Align left" title="Align left">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                                <path d="M2 3.5h12M2 6.5h8M2 9.5h12M2 12.5h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                            </svg>
+                        </button>
+                        <button type="button" data-align="center" aria-label="Align center" title="Center">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                                <path d="M2 3.5h12M4 6.5h8M2 9.5h12M4 12.5h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                            </svg>
+                        </button>
+                        <button type="button" data-align="right" aria-label="Align right" title="Align right">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                                <path d="M2 3.5h12M6 6.5h8M2 9.5h12M6 12.5h8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                            </svg>
+                        </button>
+                        <button type="button" data-align="justify" aria-label="Justify" title="Justify">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                                <path d="M2 3.5h12M2 6.5h12M2 9.5h12M2 12.5h12" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="note-format-toolbar__group">
+                        <button type="button" data-indent="-1" aria-label="Decrease indent" title="Decrease indent">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                                <path d="M6.5 3.5h8M6.5 8h8M6.5 12.5h8M4.5 5.75L2 8l2.5 2.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </button>
+                        <button type="button" data-indent="1" aria-label="Increase indent" title="Increase indent">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                                <path d="M6.5 3.5h8M6.5 8h8M6.5 12.5h8M2 5.75L4.5 8L2 10.25" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </button>
+                    </div>
+                    <div class="note-format-toolbar__group">
+                        <button type="button" data-command="insertUnorderedList" aria-label="Bullet list" title="Bullet list">•</button>
+                        <button type="button" data-command="insertOrderedList" aria-label="Numbered list" title="Numbered list">1.</button>
                         <button type="button" data-insert="§" aria-label="Insert section symbol" title="Section (§)">§</button>
+                        <button type="button" data-insert="¶" aria-label="Insert paragraph symbol" title="Paragraph (¶)">¶</button>
+                        <button type="button" data-command="removeFormat" aria-label="Clear formatting" title="Clear formatting">T<sub>x</sub></button>
                     </div>
                     <div class="note-format-toolbar__group note-format-toolbar__group--end">
                         <button
@@ -233,20 +275,19 @@
             <span class="note-busy-cursor-note__spinner" aria-hidden="true"></span>
             <span id="noteBusyStatusText" class="note-busy-cursor-note__text"></span>
         </p>
-        <script src="./vendor/html2canvas.min.js"></script>
-        <script src="./vendor/jspdf.umd.min.js"></script>
         <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
         <script src="./js/pleading/layout-spec.js?v=20260711b"></script>
         <script src="./js/pleading/page-view.js?v=20260711b"></script>
         <script src="./js/pleading/paginator.js?v=20260711b"></script>
-        <script src="./js/pleading/stylesheet.js?v=20260711b"></script>
-        <script src="./js/pleading-editor/layout.js?v=20260711b"></script>
+        <script src="./js/pleading/stylesheet.js?v=20260731b"></script>
+        <script src="./js/pleading-editor/layout.js?v=20260731a"></script>
+        <script src="./js/pleading-editor/formatting.js?v=20260731a"></script>
         <script src="./js/pleading/document.js?v=20260711b"></script>
-        <script src="./js/pleading/export-pdf.js?v=20260711k"></script>
+        <script src="./js/pleading/export-pdf.js?v=20260731a"></script>
         <script src="./js/pleading-editor/editor.js?v=20260711b"></script>
         <script src="./js/config.js?v=20260711al"></script>
         <script src="./js/logging.js?v=20260712a"></script>
-        <script src="./js/chat.js?v=20260712c"></script>
-        <script src="./js/notes.js?v=20260712b"></script>
+        <script src="./js/chat.js?v=20260731a"></script>
+        <script src="./js/notes.js?v=20260731a"></script>
     </body>
 </html>

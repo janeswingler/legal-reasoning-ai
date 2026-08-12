@@ -7,12 +7,26 @@
 
         <link rel="stylesheet" href="./css/variables.css?v=20260711v" />
         <link rel="stylesheet" href="./css/reset.css" />
-        <link rel="stylesheet" href="./css/layout.css?v=20260711am" />
-        <link rel="stylesheet" href="./css/chat.css?v=20260712c" />
-        <link rel="stylesheet" href="./css/notes.css?v=20260731a" />
+        <link rel="stylesheet" href="./css/layout.css?v=20260812b" />
+        <link rel="stylesheet" href="./css/chat.css?v=20260812b" />
+        <link rel="stylesheet" href="./css/notes.css?v=20260812b" />
+        <link rel="stylesheet" href="./css/screen-gate.css?v=20260812a" />
 
     </head>
     <body>
+        <div class="screen-gate" role="alert">
+            <div class="screen-gate__card">
+                <h1 class="screen-gate__title">This tool needs a larger screen</h1>
+                <p class="screen-gate__text">
+                    Legal Reasoning AI is built for a laptop or desktop. Please reopen it
+                    in a browser window at least 900 pixels wide.
+                </p>
+                <p class="screen-gate__hint">
+                    Already on a laptop? Try maximizing the window, or reset the browser
+                    zoom with Command&#8211;0 (Mac) or Ctrl&#8211;0 (Windows).
+                </p>
+            </div>
+        </div>
         <script>
             (function () {
                 var raw = new URLSearchParams(location.search).get("systemID");
@@ -151,6 +165,19 @@
                 </div>
             </section>
 
+            <div
+                class="app-split-handle"
+                id="appSplitHandle"
+                role="separator"
+                aria-orientation="vertical"
+                aria-label="Resize chat and assignment editor"
+                aria-valuemin="30"
+                aria-valuemax="70"
+                aria-valuenow="50"
+                tabindex="0"
+                title="Drag to resize. Double-click to reset."
+            ></div>
+
             <section class="panel panel-notes" aria-label="Assignment editor">
                 <div class="panel-notes__header">
                     <h2 class="panel-notes__label">Assignment Editor</h2>
@@ -270,6 +297,7 @@
             <span class="note-busy-cursor-note__spinner" aria-hidden="true"></span>
             <span id="noteBusyStatusText" class="note-busy-cursor-note__text"></span>
         </p>
+        <script src="./js/screen-gate.js?v=20260812a"></script>
         <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
         <script src="./js/pleading/layout-spec.js?v=20260711b"></script>
         <script src="./js/pleading/page-view.js?v=20260711b"></script>
@@ -279,10 +307,13 @@
         <script src="./js/pleading-editor/formatting.js?v=20260731a"></script>
         <script src="./js/pleading/document.js?v=20260711b"></script>
         <script src="./js/pleading/export-pdf.js?v=20260731a"></script>
-        <script src="./js/pleading-editor/editor.js?v=20260803b"></script>
-        <script src="./js/config.js?v=20260711al"></script>
-        <script src="./js/logging.js?v=20260712a"></script>
-        <script src="./js/chat.js?v=20260731a"></script>
-        <script src="./js/notes.js?v=20260731a"></script>
+        <script src="./js/pleading-editor/editor.js?v=20260812d"></script>
+        <script src="./js/config.js?v=20260812t"></script>
+        <script src="./js/logging.js?v=20260812t"></script>
+        <script src="./js/split-pane.js?v=20260812t"></script>
+        <script src="./js/chat.js?v=20260812t"></script>
+        <script src="./js/notes.js?v=20260812t"></script>
+        <!-- Last: attaches to the editor and chat once both exist. -->
+        <script src="./js/instrumentation.js?v=20260812t"></script>
     </body>
 </html>

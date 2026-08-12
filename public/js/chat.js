@@ -43,9 +43,34 @@ const STOP_ICON_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="non
 
 let currentChatSessionId = null;
 let pendingAttachments = [];
-let chatBusy = false;
-let activeChatAbortController = null;
-let streamAbortRequested = false;
+/**
+ * In-flight sends keyed by chat session id.
+ * Each chat can generate independently (own abort + optimistic prompt).
+ * @type {Map<string, {
+ *   userText: string,
+ *   attachments: Array,
+ *   abortController: AbortController,
+ *   streamAbortRequested: boolean
+ * }>}
+ */
+const pendingBySessionId = new Map();
+/** Ignores stale history responses when the student switches chats quickly. */
+let historyLoadToken = 0;
+
+function sameChatSessionId(a, b) {
+    return a != null && b != null && String(a) === String(b);
+}
+
+function sessionKey(id) {
+    return String(id);
+}
+
+function getPendingForSession(id) {
+    if (id == null) {
+        return null;
+    }
+    return pendingBySessionId.get(sessionKey(id)) || null;
+}
 
 const PDF_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
     <path
@@ -208,21 +233,6 @@ function chatInteractionProps(extra = {}) {
     };
 }
 
-function getChatMessageRoleFromNode(node) {
-    const element = node?.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-    const message = element?.closest?.(".message");
-    if (!message || !chatLog.contains(message)) {
-        return null;
-    }
-    if (message.classList.contains("message--user")) {
-        return "user";
-    }
-    if (message.classList.contains("message--assistant")) {
-        return "assistant";
-    }
-    return null;
-}
-
 function renderAssistantHtml(text) {
     if (typeof marked !== "undefined" && typeof marked.parse === "function") {
         return marked.parse(text, { breaks: true, gfm: true });
@@ -262,14 +272,39 @@ function getStreamPace(tokenCount) {
 /**
  * Jumps to the newest message.
  *
- * Only used when a conversation is loaded or switched, where the log has just
- * been rebuilt from scratch and there is no reading position to preserve.
- *
- * Sending a message and streaming a response deliberately do NOT scroll - the
- * view stays exactly where the reader left it, and scrolling is manual only.
+ * Used when a conversation is loaded or switched, and when a reply finishes
+ * generating, so the end of the answer signals that it is done.
  */
 function scrollChatLogToBottom() {
     chatLog.scrollTop = chatLog.scrollHeight;
+}
+
+/**
+ * Anchors the newest prompt near the top of the chat window, then scrolls
+ * further if needed so the typing indicator stays visible. A long prompt would
+ * otherwise push the indicator below the fold and the reply looks stalled.
+ *
+ * Only runs on send, so the reader can scroll away without being yanked back.
+ */
+function anchorLatestPromptInView(promptEl) {
+    if (!promptEl || !chatLog.contains(promptEl)) {
+        return;
+    }
+
+    const logRect = chatLog.getBoundingClientRect();
+    const toContentOffset = (clientTop) => chatLog.scrollTop + (clientTop - logRect.top);
+
+    let target = toContentOffset(promptEl.getBoundingClientRect().top);
+
+    if (typingIndicatorEl && chatLog.contains(typingIndicatorEl)) {
+        const indicatorBottom = toContentOffset(
+            typingIndicatorEl.getBoundingClientRect().bottom
+        );
+        target = Math.max(target, indicatorBottom - chatLog.clientHeight);
+    }
+
+    const maxScroll = Math.max(0, chatLog.scrollHeight - chatLog.clientHeight);
+    chatLog.scrollTop = Math.min(Math.max(0, target), maxScroll);
 }
 
 function appendMessage(role, text, attachments = []) {
@@ -307,7 +342,7 @@ function appendMessage(role, text, attachments = []) {
     return { messageEl, textEl, rowEl };
 }
 
-async function appendAssistantMessageAnimated(text) {
+async function appendAssistantMessageAnimated(text, pending = null) {
     const fullText = String(text || "");
     const { messageEl, textEl } = appendMessage("assistant", "");
     messageEl.classList.add("message--streaming");
@@ -319,7 +354,7 @@ async function appendAssistantMessageAnimated(text) {
         return { messageEl, textEl, stopped: false };
     }
 
-    if (streamAbortRequested) {
+    if (pending?.streamAbortRequested) {
         messageEl.remove();
         return { messageEl, textEl, stopped: true };
     }
@@ -330,7 +365,7 @@ async function appendAssistantMessageAnimated(text) {
     let stopped = false;
 
     while (shownCount < tokens.length) {
-        if (streamAbortRequested) {
+        if (pending?.streamAbortRequested) {
             stopped = true;
             break;
         }
@@ -436,7 +471,23 @@ async function loadSessions() {
     return sessions;
 }
 
+/**
+ * Re-show the optimistic user bubble (+ typing dots) when returning to a chat
+ * whose reply has not been saved yet. History only includes completed exchanges.
+ */
+function restorePendingChatUi(chatSessionId) {
+    const pending = getPendingForSession(chatSessionId);
+    if (!pending) {
+        return;
+    }
+
+    const { rowEl } = appendMessage("user", pending.userText, pending.attachments);
+    showTypingIndicator();
+    anchorLatestPromptInView(rowEl);
+}
+
 async function loadConversationHistory(chatSessionId) {
+    const token = ++historyLoadToken;
     const response = await fetch(
         `/api/chat/sessions/${encodeURIComponent(chatSessionId)}/history?${sessionQuery()}`
     );
@@ -446,7 +497,14 @@ async function loadConversationHistory(chatSessionId) {
     }
 
     const { exchanges } = await response.json();
+
+    // Student may have switched away while this fetch was in flight.
+    if (token !== historyLoadToken || !sameChatSessionId(currentChatSessionId, chatSessionId)) {
+        return;
+    }
+
     renderHistory(exchanges);
+    restorePendingChatUi(chatSessionId);
 }
 
 async function loadPendingAttachments() {
@@ -520,11 +578,12 @@ async function uploadAttachment(file) {
 
         const { attachment } = await response.json();
 
-        logSystemInteraction({
-            eventType: "upload",
+        logEvent({
+            eventType: "attachment_add",
             elementName: "Chat PDF Attachment",
             page: "chat",
-            eventProps: { filename: file.name },
+            valueNum: file.size,
+            eventProps: { ...chatInteractionProps(), filename: file.name, sizeBytes: file.size },
         });
 
         pendingAttachments.push(attachment);
@@ -536,11 +595,24 @@ async function uploadAttachment(file) {
 }
 
 async function selectSession(chatSessionId) {
+    if (!sameChatSessionId(currentChatSessionId, chatSessionId)) {
+        logEvent({
+            eventType: "chat_session_switch",
+            elementName: "chat-session",
+            page: "chat",
+            eventProps: {
+                fromChatSessionId: currentChatSessionId,
+                toChatSessionId: chatSessionId,
+            },
+        });
+    }
+
     currentChatSessionId = chatSessionId;
     setStoredChatSessionId(chatSessionId);
     setActiveSessionItem(chatSessionId);
     await loadConversationHistory(chatSessionId);
     await loadPendingAttachments();
+    updateSendButtonState();
 }
 
 async function createChatSession() {
@@ -577,8 +649,9 @@ function startNewChat() {
     chatSessionList.querySelectorAll(".chat-sidebar__item").forEach((item) => {
         item.classList.remove("is-active");
     });
-    logSystemInteraction({
-        eventType: "click",
+    updateSendButtonState();
+    logEvent({
+        eventType: "chat_new",
         elementName: "New Chat Button",
         page: "chat",
     });
@@ -609,16 +682,17 @@ async function initChat() {
     }
 }
 
-function setChatBusy(busy) {
-    chatBusy = busy;
-    updateSendButtonState();
+/** True only when the open chat itself is generating a reply. */
+function isViewingGeneratingSession() {
+    return Boolean(getPendingForSession(currentChatSessionId));
 }
 
 function updateSendButtonState() {
-    if (chatBusy) {
+    if (isViewingGeneratingSession()) {
         sendBtn.disabled = false;
         sendBtn.type = "button";
         sendBtn.classList.add("chat-composer__send--stop");
+        sendBtn.removeAttribute("title");
         sendBtn.setAttribute("aria-label", "Stop generating");
         sendBtnIcon.innerHTML = STOP_ICON_SVG;
         return;
@@ -626,17 +700,19 @@ function updateSendButtonState() {
 
     sendBtn.type = "submit";
     sendBtn.classList.remove("chat-composer__send--stop");
+    sendBtn.removeAttribute("title");
     sendBtn.setAttribute("aria-label", "Send message");
     sendBtnIcon.innerHTML = SEND_ICON_SVG;
     sendBtn.disabled = chatInput.value.trim().length === 0;
 }
 
 function stopChatGeneration() {
-    streamAbortRequested = true;
-    if (activeChatAbortController) {
-        activeChatAbortController.abort();
-        activeChatAbortController = null;
+    const pending = getPendingForSession(currentChatSessionId);
+    if (!pending) {
+        return;
     }
+    pending.streamAbortRequested = true;
+    pending.abortController.abort();
 }
 
 function resizeChatInput() {
@@ -645,42 +721,72 @@ function resizeChatInput() {
 }
 
 sendBtn.addEventListener("click", (event) => {
-    if (!chatBusy) return;
+    if (!isViewingGeneratingSession()) return;
     event.preventDefault();
-    logSystemInteraction({ eventType: "click", elementName: "Stop Button", page: "chat" });
+    logEvent({
+        eventType: "chat_stop",
+        elementName: "Stop Button",
+        page: "chat",
+        eventProps: chatInteractionProps(),
+    });
     stopChatGeneration();
 });
 
 chatForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
-    if (chatBusy) return;
+    // Only block if THIS chat is already generating — other chats stay independent.
+    if (isViewingGeneratingSession()) return;
 
     const text = chatInput.value.trim();
     if (!text) return;
 
-    logSystemInteraction({ eventType: "click", elementName: "Send Button", page: "chat" });
+    logEvent({
+        eventType: "chat_send",
+        elementName: "Send Button",
+        page: "chat",
+        valueNum: text.length,
+        eventProps: {
+            ...chatInteractionProps(),
+            promptChars: text.length,
+            attachmentCount: pendingAttachments.length,
+        },
+    });
 
-    streamAbortRequested = false;
-    activeChatAbortController = new AbortController();
-    const { signal } = activeChatAbortController;
-    setChatBusy(true);
+    let requestSessionId = null;
+    const sendStartedAt = Date.now();
 
     try {
         const chatSessionId = await ensureChatSession();
+        requestSessionId = chatSessionId;
+
+        if (getPendingForSession(chatSessionId)) {
+            return;
+        }
+
         const attachmentsForMessage = [...pendingAttachments];
         const attachmentIds = attachmentsForMessage.map((attachment) => attachment._id);
+        const abortController = new AbortController();
+        const pending = {
+            userText: text,
+            attachments: attachmentsForMessage,
+            abortController,
+            streamAbortRequested: false,
+        };
+        pendingBySessionId.set(sessionKey(chatSessionId), pending);
+        updateSendButtonState();
 
-        appendMessage("user", text, attachmentsForMessage);
+        const { rowEl: promptRowEl } = appendMessage("user", text, attachmentsForMessage);
         setPendingAttachments([]);
         chatInput.value = "";
         resizeChatInput();
         showTypingIndicator();
+        anchorLatestPromptInView(promptRowEl);
 
         const response = await fetch("/api/chat", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            signal,
+            signal: abortController.signal,
             body: JSON.stringify({
                 participantID: config.participantID,
                 sessionID: config.sessionID,
@@ -692,36 +798,82 @@ chatForm.addEventListener("submit", async (event) => {
             }),
         });
 
-        hideTypingIndicator();
+        const viewingRequestSession = sameChatSessionId(currentChatSessionId, requestSessionId);
+        if (viewingRequestSession) {
+            hideTypingIndicator();
+        }
 
         if (!response.ok) {
             let errorText = "Sorry, something went wrong.";
             if (response.status === 503) {
                 errorText = "Chat is not configured yet. Please contact the study administrator.";
             }
-            appendMessage("assistant", errorText);
-            await loadPendingAttachments();
+            if (viewingRequestSession) {
+                appendMessage("assistant", errorText);
+            }
+            if (viewingRequestSession) {
+                await loadPendingAttachments();
+            }
             return;
         }
 
         const exchange = await response.json();
-        if (streamAbortRequested) {
+
+        logEvent({
+            eventType: "chat_response",
+            elementName: "assistant-reply",
+            page: "chat",
+            valueNum: Date.now() - sendStartedAt,
+            durationMs: Date.now() - sendStartedAt,
+            eventProps: {
+                chatSessionId: requestSessionId,
+                responseChars: (exchange.botResponse || "").length,
+                attachmentCount: attachmentIds.length,
+                retrievedChunks: exchange.retrievedChunkIds?.length ?? 0,
+            },
+        });
+
+        if (pending.streamAbortRequested) {
             return;
         }
-        await appendAssistantMessageAnimated(exchange.botResponse);
+
+        // Only paint into the open thread. If the student is elsewhere, the
+        // exchange is already saved and will appear when they open this chat.
+        if (sameChatSessionId(currentChatSessionId, requestSessionId)) {
+            await appendAssistantMessageAnimated(exchange.botResponse, pending);
+
+            // Land at the end of the reply so it reads as finished.
+            if (sameChatSessionId(currentChatSessionId, requestSessionId)) {
+                scrollChatLogToBottom();
+            }
+        }
         await loadSessions();
     } catch (error) {
-        hideTypingIndicator();
+        const viewingRequestSession = sameChatSessionId(currentChatSessionId, requestSessionId);
+        if (viewingRequestSession) {
+            hideTypingIndicator();
+        }
         if (error?.name === "AbortError") {
+            // Stop cancels before the exchange is saved — drop the optimistic bubble.
+            if (viewingRequestSession && requestSessionId != null) {
+                await loadConversationHistory(requestSessionId).catch(() => {
+                    showWelcomeMessage();
+                });
+            }
             return;
         }
-        appendMessage("assistant", "Sorry, something went wrong.");
-        await loadPendingAttachments();
+        if (viewingRequestSession) {
+            appendMessage("assistant", "Sorry, something went wrong.");
+            await loadPendingAttachments();
+        }
     } finally {
-        activeChatAbortController = null;
-        streamAbortRequested = false;
-        setChatBusy(false);
-        chatInput.focus();
+        if (requestSessionId != null) {
+            pendingBySessionId.delete(sessionKey(requestSessionId));
+        }
+        updateSendButtonState();
+        if (sameChatSessionId(currentChatSessionId, requestSessionId)) {
+            chatInput.focus();
+        }
     }
 });
 
@@ -733,7 +885,7 @@ chatInput.addEventListener("input", () => {
 chatInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        if (chatBusy || sendBtn.disabled) return;
+        if (isViewingGeneratingSession() || sendBtn.disabled) return;
         chatForm.requestSubmit();
     }
 });
@@ -761,10 +913,11 @@ if (chatSidebarToggle && chatLayout) {
     chatSidebarToggle.addEventListener("click", () => {
         const nextCollapsed = !chatLayout.classList.contains("is-sidebar-collapsed");
         setChatSidebarCollapsed(nextCollapsed);
-        logSystemInteraction({
-            eventType: "click",
+        logEvent({
+            eventType: "sidebar_toggle",
             elementName: nextCollapsed ? "Hide Chat Sidebar" : "Show Chat Sidebar",
             page: "chat",
+            eventProps: { collapsed: nextCollapsed },
         });
     });
 }
@@ -779,33 +932,8 @@ chatFileInput.addEventListener("change", async () => {
     await uploadAttachment(file);
 });
 
-chatLog.addEventListener("copy", () => {
-    const selection = document.getSelection();
-    if (!selection || selection.isCollapsed) {
-        return;
-    }
-
-    const messageRole = getChatMessageRoleFromNode(selection.anchorNode);
-    if (!messageRole) {
-        return;
-    }
-
-    logSystemInteraction({
-        eventType: "copy",
-        elementName: "chat-message",
-        page: "chat",
-        eventProps: chatInteractionProps({ messageRole }),
-    });
-});
-
-chatInput.addEventListener("paste", () => {
-    logSystemInteraction({
-        eventType: "paste",
-        elementName: "chat-input",
-        page: "chat",
-        eventProps: chatInteractionProps(),
-    });
-});
+// Copy and paste are captured with their text by instrumentation.js, which
+// records the content itself rather than only the location.
 
 initChat();
 } // end AI-enabled chat bootstrap

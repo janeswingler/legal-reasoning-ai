@@ -242,8 +242,9 @@ body.is-notes-busy * {
 .pleading-paper {
   flex: 1;
   min-height: 0;
-  overflow-y: auto;
-  overflow-x: hidden;
+  /* Scrolls on both axes: the page renders at true size, so a narrow pane pans
+     across it rather than shrinking the text. */
+  overflow: auto;
   scrollbar-gutter: stable;
   position: relative;
   background: #ffffff;
@@ -252,8 +253,10 @@ body.is-notes-busy * {
 }
 
 .pleading-viewport {
+  /* Grows to the page when the pane is narrower, so the scroll region covers the
+     whole sheet; otherwise 100% wins and the page stays centred. */
   width: 100%;
-  overflow-x: hidden;
+  min-width: max-content;
 }
 
 .pleading-scale-sizer {

@@ -12,6 +12,7 @@ const accessRoutes = require("./server/routes/access.js");
 const assignmentsRoutes = require("./server/routes/assignments.js");
 const chatRoutes = require("./server/routes/chat.js");
 const systemInteractionRoutes = require("./server/routes/systemInteractions.js");
+const telemetryRoutes = require("./server/routes/telemetry.js");
 const googleAuthRoutes = require("./server/routes/googleAuth.js");
 
 const app = express();
@@ -30,6 +31,7 @@ app.use(accessGateMiddleware);
 app.use("/api/assignments", assignmentsRoutes);
 app.use("/api/chat", chatRoutes);
 app.use("/api/system-interactions", systemInteractionRoutes);
+app.use("/api/telemetry", telemetryRoutes);
 app.use("/api/auth/google", googleAuthRoutes);
 
 app.use(express.static(path.join(__dirname, "public")));

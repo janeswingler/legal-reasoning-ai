@@ -1,10 +1,10 @@
 /* Chat panel — open canvas on page background */
 
 .panel-chat {
-  --chat-font-xs: calc(var(--font-size-xs) - 2pt);
-  --chat-font-sm: calc(var(--font-size-sm) - 2pt);
-  --chat-font-md: calc(var(--font-size-md) - 2pt);
-  --chat-font-lg: calc(var(--font-size-lg) - 2pt);
+  --chat-font-xs: calc(var(--font-size-xs) - 2.5pt);
+  --chat-font-sm: calc(var(--font-size-sm) - 2.5pt);
+  --chat-font-md: calc(var(--font-size-md) - 2.5pt);
+  --chat-font-lg: calc(var(--font-size-lg) - 2.5pt);
   font-size: var(--chat-font-md);
   gap: var(--space-2);
 }

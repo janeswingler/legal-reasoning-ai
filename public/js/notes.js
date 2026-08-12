@@ -201,6 +201,9 @@ async function saveCurrentNote() {
 
 function scheduleSave() {
     if (isInitializing) return;
+    // Catches changes with no keystroke behind them: pastes, toolbar
+    // formatting, and list operations.
+    window.markEditorDirty?.();
     invalidatePdfCache();
     clearTimeout(saveTimer);
     setSaveStatus("Saving…");
@@ -275,12 +278,16 @@ async function submitAssignment() {
         }
     }
 
-    logSystemInteraction({
-        eventType: "click",
+    logEvent({
+        eventType: "submit",
         elementName: isResubmit ? "Resubmit Assignment" : "Submit Assignment",
         page: "assignment",
-        eventProps: { assignmentId: config.assignmentId, format: "pdf" },
+        valueNum: plainText.length,
+        eventProps: { format: "pdf", isResubmit, charCount: plainText.length },
     });
+
+    // Pin the exact text that was submitted, independent of the 30s cadence.
+    window.captureEditorSnapshot?.("submit", { force: true });
 
     submitAssignmentBtn.disabled = true;
     exportPdfBtn.disabled = true;
@@ -340,11 +347,11 @@ async function exportNotePdf() {
         return;
     }
 
-    logSystemInteraction({
-        eventType: "click",
+    logEvent({
+        eventType: "export_pdf",
         elementName: "Export PDF",
         page: "assignment",
-        eventProps: { assignmentId: config.assignmentId, format: "pdf" },
+        eventProps: { format: "pdf" },
     });
 
     exportPdfBtn.disabled = true;
@@ -447,23 +454,8 @@ function bindToolbar() {
     });
 }
 
-noteEditorEl.addEventListener("copy", () => {
-    logSystemInteraction({
-        eventType: "copy",
-        elementName: "note-editor",
-        page: "assignment",
-        eventProps: { assignmentId: config.assignmentId },
-    });
-});
-
-noteEditorEl.addEventListener("paste", () => {
-    logSystemInteraction({
-        eventType: "paste",
-        elementName: "note-editor",
-        page: "assignment",
-        eventProps: { assignmentId: config.assignmentId },
-    });
-});
+// Copy and paste are captured with their text by instrumentation.js, which
+// records the content itself rather than only the location.
 
 async function initNote() {
     pleadingEditor = new PleadingEditor({
@@ -476,6 +468,9 @@ async function initNote() {
         editorEl: noteEditorEl,
         onChange: scheduleSave,
     });
+
+    // split-pane.js changes the editor's available width and asks it to rescale.
+    window.pleadingEditor = pleadingEditor;
 
     bindToolbar();
     setSaveStatus("Loading…");
@@ -508,6 +503,9 @@ async function initNote() {
         setSaveStatus("Load failed");
     } finally {
         isInitializing = false;
+        // Baseline revision for this sitting. Deduped server-side, so reopening
+        // without editing does not add a row.
+        window.captureEditorSnapshot?.("load", { force: true });
     }
 }
 

@@ -20,5 +20,8 @@ google-service-account.json
 tmp-*
 *.pdf
 
+# Study data exports contain participant text - never commit
+exports/
+
 # Licensed font binaries - supply per deploy (Times New Roman, or Tinos on Linux)
 server/assets/fonts/*.ttf

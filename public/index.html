@@ -7,8 +7,22 @@
         <link rel="stylesheet" href="./css/variables.css?v=20260725a" />
         <link rel="stylesheet" href="./css/reset.css" />
         <link rel="stylesheet" href="./css/enter.css?v=20260725a" />
+        <link rel="stylesheet" href="./css/screen-gate.css?v=20260812a" />
     </head>
     <body class="enter-page">
+        <div class="screen-gate" role="alert">
+            <div class="screen-gate__card">
+                <h1 class="screen-gate__title">This tool needs a larger screen</h1>
+                <p class="screen-gate__text">
+                    Legal Reasoning AI is built for a laptop or desktop. Please reopen it
+                    in a browser window at least 900 pixels wide.
+                </p>
+                <p class="screen-gate__hint">
+                    Already on a laptop? Try maximizing the window, or reset the browser
+                    zoom with Command&#8211;0 (Mac) or Ctrl&#8211;0 (Windows).
+                </p>
+            </div>
+        </div>
         <main class="enter-card" aria-labelledby="enterTitle">
             <header class="enter-card__header">
                 <h1 id="enterTitle" class="enter-card__title">Legal Reasoning AI</h1>
@@ -70,6 +84,7 @@
                 </button>
             </form>
         </main>
+        <script src="./js/screen-gate.js?v=20260812a"></script>
         <script src="./js/enter.js?v=20260725a"></script>
     </body>
 </html>

@@ -105,17 +105,98 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Append-only interaction log. `page` holds the surface (editor / chat / window
+-- / app), `element_name` the specific target. `duration_ms` and `value_num` are
+-- promoted out of event_props so the headline study measures need no
+-- JSON_EXTRACT. `session_seq` is monotonic within a sitting: it makes retried
+-- batches idempotent and turns dropped events into visible gaps.
 CREATE TABLE IF NOT EXISTS system_interactions (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
   participant_id VARCHAR(255) NULL,
   assignment_id VARCHAR(255) NULL,
   system_id VARCHAR(255) NULL,
   session_id VARCHAR(255) NULL,
+  session_seq INT NULL,
   event_type VARCHAR(128) NULL,
   element_name VARCHAR(255) NULL,
   event_props JSON NULL,
+  duration_ms INT NULL,
+  value_num DOUBLE NULL,
   client_ts DATETIME(3) NULL,
   page VARCHAR(128) NULL,
   ui_version VARCHAR(64) NULL,
-  timestamp DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3)
+  timestamp DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uq_interactions_session_seq (session_id, session_seq),
+  KEY idx_interactions_participant_assignment_ts (participant_id, assignment_id, client_ts),
+  KEY idx_interactions_event_type_ts (event_type, client_ts)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One row per sitting (page load in a fresh tab). Gives the study explicit
+-- start/end boundaries so "closed the browser and came back" is directly
+-- visible rather than inferred.
+CREATE TABLE IF NOT EXISTS study_sessions (
+  id VARCHAR(64) NOT NULL PRIMARY KEY,
+  participant_id VARCHAR(255) NULL,
+  assignment_id VARCHAR(255) NULL,
+  system_id VARCHAR(255) NULL,
+  started_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  client_started_at DATETIME(3) NULL,
+  last_seen_at DATETIME(3) NULL,
+  ended_at DATETIME(3) NULL,
+  end_reason VARCHAR(32) NULL,
+  user_agent VARCHAR(512) NULL,
+  screen_w INT NULL,
+  screen_h INT NULL,
+  viewport_w INT NULL,
+  viewport_h INT NULL,
+  tz_offset_min INT NULL,
+  -- server clock minus client clock at session start, for correcting client_ts
+  clock_skew_ms INT NULL,
+  KEY idx_study_sessions_participant_started (participant_id, started_at),
+  KEY idx_study_sessions_assignment (assignment_id, started_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Revision history for the assignment. The assignments table keeps only the
+-- latest draft; this turns the document into a timeline so frequency and size
+-- of changes can be measured.
+CREATE TABLE IF NOT EXISTS editor_snapshots (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  session_id VARCHAR(64) NULL,
+  participant_id VARCHAR(255) NULL,
+  assignment_id VARCHAR(255) NULL,
+  system_id VARCHAR(255) NULL,
+  captured_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  client_ts DATETIME(3) NULL,
+  reason VARCHAR(32) NULL,
+  content_html LONGTEXT NULL,
+  plain_text LONGTEXT NULL,
+  char_count INT NULL,
+  word_count INT NULL,
+  content_hash CHAR(64) NULL,
+  keystrokes_since_prev INT NULL,
+  KEY idx_snapshots_participant_assignment_ts (participant_id, assignment_id, captured_at),
+  KEY idx_snapshots_session (session_id, captured_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Copy/cut/paste with the actual text. `origin` classifies each paste against
+-- earlier copies by the same participant: text copied out of the AI chat, out
+-- of the editor, or arriving from outside the system entirely.
+CREATE TABLE IF NOT EXISTS clipboard_events (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  session_id VARCHAR(64) NULL,
+  participant_id VARCHAR(255) NULL,
+  assignment_id VARCHAR(255) NULL,
+  system_id VARCHAR(255) NULL,
+  chat_session_id BIGINT UNSIGNED NULL,
+  action VARCHAR(16) NOT NULL,
+  surface VARCHAR(32) NULL,
+  content LONGTEXT NULL,
+  char_count INT NULL,
+  truncated TINYINT(1) NOT NULL DEFAULT 0,
+  content_hash CHAR(64) NULL,
+  origin VARCHAR(32) NULL,
+  client_ts DATETIME(3) NULL,
+  server_ts DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  KEY idx_clipboard_participant_assignment_ts (participant_id, assignment_id, client_ts),
+  KEY idx_clipboard_hash_lookup (participant_id, content_hash, action)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

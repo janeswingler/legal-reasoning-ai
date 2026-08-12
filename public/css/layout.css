@@ -26,10 +26,18 @@ body {
 }
 
 .app-main {
+  /*
+   * Both panes are sized in fr so the gaps and the drag handle come out of the
+   * shared space, which makes the 1fr/1fr default a genuinely even split.
+   * split-pane.js rewrites these two values; pane minimums are clamped there
+   * rather than with minmax(), which cannot mix a px floor with an fr track.
+   */
+  --split-chat: 1fr;
+  --split-editor: 1fr;
   flex: 1;
   display: grid;
-  grid-template-columns: minmax(0, 1.35fr) minmax(20rem, 0.9fr);
-  gap: var(--space-3);
+  grid-template-columns: minmax(0, var(--split-chat)) auto minmax(0, var(--split-editor));
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-3) var(--space-3) var(--space-2);
   min-height: 0;
   width: 100%;
@@ -39,6 +47,45 @@ body {
   display: flex;
   flex-direction: column;
   min-height: 0;
+}
+
+/* Drag handle between the chat and the assignment editor */
+.app-split-handle {
+  position: relative;
+  width: 6px;
+  align-self: stretch;
+  background: transparent;
+  cursor: col-resize;
+  /* Keeps a touchpad drag from being taken over as a page scroll gesture. */
+  touch-action: none;
+}
+
+.app-split-handle::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 1.5px;
+  transform: translateX(-50%);
+  background: transparent;
+  transition: background 0.15s ease;
+}
+
+.app-split-handle:hover::before,
+.app-split-handle:focus-visible::before,
+body.is-splitting .app-split-handle::before {
+  background: var(--border-strong);
+}
+
+.app-split-handle:focus-visible {
+  outline: none;
+}
+
+/* Held on <body> so the resize cursor survives leaving the handle mid-drag. */
+body.is-splitting {
+  cursor: col-resize;
+  user-select: none;
 }
 
 /* Chat is open page canvas — not a card */
@@ -56,7 +103,9 @@ body {
   border: 1px solid var(--border);
   border-radius: 0;
   box-shadow: var(--shadow-panel);
-  padding: var(--space-4);
+  /* Side padding stays tight: the pleading page renders at full size, so every
+     pixel here is a pixel of horizontal scrolling. */
+  padding: var(--space-4) var(--space-2);
 }
 
 .panel-notes h2,
@@ -111,6 +160,7 @@ body {
 .chat-log::-webkit-scrollbar,
 .pleading-paper::-webkit-scrollbar {
   width: 7px;
+  height: 7px;
 }
 
 .chat-log::-webkit-scrollbar-track,
@@ -130,7 +180,8 @@ body {
 }
 
 /* systemID=1 — Assignment Editor only, centered */
-body.system-1 .panel-chat {
+body.system-1 .panel-chat,
+body.system-1 .app-split-handle {
   display: none;
 }
 
@@ -141,7 +192,7 @@ body.system-1 .app-main {
 }
 
 body.system-1 .panel-notes {
-  /* Match typical system-2 notes column (~0.9fr of the split) */
-  width: min(36rem, 100%);
+  /* Wide enough for the full-size pleading page plus padding and scrollbar. */
+  width: min(42rem, 100%);
   max-width: 100%;
 }

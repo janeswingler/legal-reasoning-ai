@@ -1,0 +1,77 @@
+/*
+ * Minimum viewport gate.
+ *
+ * The app has no small-screen layout: the assignment column has a 20rem floor
+ * and the pleading page scales down to whatever space is left, so below ~900px
+ * the editor text renders too small to write with. Gating in CSS rather than JS
+ * means the block paints before any script runs and cannot be skipped if a
+ * script fails.
+ *
+ * Keep the 899px/449px breakpoints in sync with SCREEN_GATE_QUERY in
+ * js/screen-gate.js.
+ */
+
+.screen-gate {
+  display: none;
+}
+
+@media (max-width: 899px), (max-height: 449px) {
+  /*
+   * Targets the page containers specifically. A blanket `body > *` would also
+   * hide the off-screen probe elements the pleading editor appends to measure
+   * line height, which would cache a wrong value for the session.
+   */
+  .app-main,
+  .enter-card,
+  .note-busy-cursor-note {
+    display: none !important;
+  }
+
+  body {
+    overflow: hidden;
+  }
+
+  .screen-gate {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    overflow-y: auto;
+    background: var(--bg-app, #f5f4f1);
+    color: var(--text, #1c1b19);
+    font-family: var(--font-sans, system-ui, sans-serif);
+  }
+
+  .screen-gate__card {
+    width: min(100%, 24rem);
+    padding: 1.75rem;
+    background: var(--bg-panel, #ffffff);
+    border: 1px solid var(--border, #e4e2dc);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(28, 27, 25, 0.06);
+    text-align: left;
+  }
+
+  .screen-gate__title {
+    margin: 0 0 0.6rem;
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1.3;
+  }
+
+  .screen-gate__text {
+    margin: 0 0 0.85rem;
+    font-size: 0.95rem;
+    line-height: 1.5;
+  }
+
+  .screen-gate__hint {
+    margin: 0;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: var(--text-muted, #8a8a84);
+  }
+}

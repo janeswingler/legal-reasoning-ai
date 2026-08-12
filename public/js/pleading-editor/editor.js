@@ -1,3 +1,15 @@
+/*
+ * On-screen zoom bounds for the pleading page.
+ *
+ * The page grows to fill a pane wider than itself but never renders below true
+ * size: a narrow pane scrolls horizontally rather than shrinking the text, so
+ * 12pt Times is never smaller than 12pt Times. Wrapping is unaffected at any
+ * zoom, since the page, the line frame, and the font are all fixed in px and
+ * scale together.
+ */
+const PLEADING_EDITOR_MIN_ZOOM = 1;
+const PLEADING_EDITOR_MAX_ZOOM = 1.5;
+
 function getContainingListItem(node, editorEl) {
     let current = node;
     while (current && current !== editorEl) {
@@ -59,9 +71,12 @@ class PleadingEditor {
         if (typeof ResizeObserver !== "undefined") {
             this.resizeObserver = new ResizeObserver(() => this.scheduleViewportScale());
             this.resizeObserver.observe(this.paperEl);
-        } else {
-            window.addEventListener("resize", () => this.scheduleViewportScale());
         }
+
+        // Watched in addition to the box, not instead of it: observer delivery can
+        // lapse once a callback resizes the element it is observing, and a stale
+        // zoom is immediately visible.
+        window.addEventListener("resize", () => this.scheduleViewportScale());
 
         this.ensureBlockStructure();
         this.syncLayout();
@@ -141,16 +156,23 @@ class PleadingEditor {
 
         const letterWidthPx = this.spec.getEditorPageWidthPx();
         const availableWidth = this.paperEl.clientWidth;
-        const scale =
+        const fitted =
             letterWidthPx > 0 && availableWidth > 0
-                ? Math.min(1, availableWidth / letterWidthPx)
-                : 1;
+                ? availableWidth / letterWidthPx
+                : PLEADING_EDITOR_MIN_ZOOM;
+        const scale = Math.min(
+            PLEADING_EDITOR_MAX_ZOOM,
+            Math.max(PLEADING_EDITOR_MIN_ZOOM, fitted)
+        );
         const naturalHeight = this.scrollSurfaceEl.offsetHeight;
 
         this.scaleFrameEl.style.width = `${letterWidthPx}px`;
         this.scaleFrameEl.style.height = `${naturalHeight}px`;
         this.scaleFrameEl.style.transform = `scale(${scale})`;
-        this.scaleSizerEl.style.width = `${Math.ceil(letterWidthPx * scale)}px`;
+        // Width floors so that a scale fitted to the pane cannot round up past it
+        // and trip a 1px horizontal scrollbar; height ceils to avoid clipping the
+        // last line.
+        this.scaleSizerEl.style.width = `${Math.floor(letterWidthPx * scale)}px`;
         this.scaleSizerEl.style.height = `${Math.ceil(naturalHeight * scale)}px`;
     }
 

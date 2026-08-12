@@ -1,8 +1,13 @@
 const STORAGE_KEYS = {
     participantID: "lrai_participantID",
     assignmentId: "lrai_assignmentId",
-    sessionID: "lrai_sessionID",
 };
+
+// One study session = one sitting. sessionStorage is scoped to the tab and is
+// cleared when the tab closes, so a browser restart starts a new session while
+// a reload keeps the current one. A localStorage id would never change and
+// would make "closed the system and came back later" impossible to see.
+const SESSION_STORAGE_KEY = "lrai_studySessionId";
 
 const params = new URLSearchParams(window.location.search);
 
@@ -58,14 +63,15 @@ const assignmentId =
     localStorage.getItem(STORAGE_KEYS.assignmentId) ||
     "week-01";
 
-let sessionID = localStorage.getItem(STORAGE_KEYS.sessionID);
-if (!sessionID) {
+let sessionID = sessionStorage.getItem(SESSION_STORAGE_KEY);
+const isNewSession = !sessionID;
+if (isNewSession) {
     sessionID = createSessionId();
+    sessionStorage.setItem(SESSION_STORAGE_KEY, sessionID);
 }
 
 localStorage.setItem(STORAGE_KEYS.participantID, participantID);
 localStorage.setItem(STORAGE_KEYS.assignmentId, assignmentId);
-localStorage.setItem(STORAGE_KEYS.sessionID, sessionID);
 
 const config = {
     participantID,
@@ -73,6 +79,7 @@ const config = {
     sessionID,
     systemID,
     isAiEnabled,
+    isNewSession,
     assignmentTitle: formatAssignmentTitle(assignmentId),
 };
 

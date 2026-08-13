@@ -257,6 +257,21 @@ function updateSubmitButtonState(note) {
     submitAssignmentBtn.title = "Submit assignment to Google Drive";
 }
 
+/**
+ * Runs instrumentation without letting it break the action it records.
+ *
+ * Submit and export previously called logEvent/captureEditorSnapshot outside
+ * their try block, so a throw there aborted the whole handler before any
+ * request was made - silently, since the click handlers did not catch.
+ */
+function recordQuietly(record) {
+    try {
+        record();
+    } catch (error) {
+        console.error("Instrumentation error:", error);
+    }
+}
+
 async function submitAssignment() {
     if (!pleadingEditor || submitAssignmentBtn.disabled) {
         return;
@@ -278,22 +293,26 @@ async function submitAssignment() {
         }
     }
 
-    logEvent({
-        eventType: "submit",
-        elementName: isResubmit ? "Resubmit Assignment" : "Submit Assignment",
-        page: "assignment",
-        valueNum: plainText.length,
-        eventProps: { format: "pdf", isResubmit, charCount: plainText.length },
+    recordQuietly(() => {
+        logEvent({
+            eventType: "submit",
+            elementName: isResubmit ? "Resubmit Assignment" : "Submit Assignment",
+            page: "assignment",
+            valueNum: plainText.length,
+            eventProps: { format: "pdf", isResubmit, charCount: plainText.length },
+        });
+
+        // Pin the exact text that was submitted, independent of the 30s cadence.
+        window.captureEditorSnapshot?.("submit", { force: true });
     });
 
-    // Pin the exact text that was submitted, independent of the 30s cadence.
-    window.captureEditorSnapshot?.("submit", { force: true });
-
-    submitAssignmentBtn.disabled = true;
-    exportPdfBtn.disabled = true;
-    await beginNotesBusy("Please wait for submission confirmation…");
-
     try {
+        // Inside the try so a failure here cannot leave the button permanently
+        // disabled, which would make every later click a silent no-op.
+        submitAssignmentBtn.disabled = true;
+        exportPdfBtn.disabled = true;
+        await beginNotesBusy("Please wait for submission confirmation…");
+
         const [, pdfBlob] = await Promise.all([
             saveCurrentNote(),
             getOrBuildPdfBlob(),
@@ -347,18 +366,20 @@ async function exportNotePdf() {
         return;
     }
 
-    logEvent({
-        eventType: "export_pdf",
-        elementName: "Export PDF",
-        page: "assignment",
-        eventProps: { format: "pdf" },
-    });
-
-    exportPdfBtn.disabled = true;
-    submitAssignmentBtn.disabled = true;
-    await beginNotesBusy("Creating your PDF. Please wait…");
+    recordQuietly(() =>
+        logEvent({
+            eventType: "export_pdf",
+            elementName: "Export PDF",
+            page: "assignment",
+            eventProps: { format: "pdf" },
+        })
+    );
 
     try {
+        exportPdfBtn.disabled = true;
+        submitAssignmentBtn.disabled = true;
+        await beginNotesBusy("Creating your PDF. Please wait…");
+
         const [, pdfBlob] = await Promise.all([
             saveCurrentNote(),
             getOrBuildPdfBlob(),
@@ -443,14 +464,27 @@ function bindToolbar() {
         updateToolbarState();
     });
 
+    // Both handlers are fire-and-forget, so an unhandled rejection would leave
+    // the student staring at a button that did nothing. Surface it instead.
+    const reportUnexpected = (label) => (error) => {
+        console.error(`${label} failed:`, error);
+        alert(
+            `${label} could not be completed. Please try again.` +
+                (error?.message ? `\n\n${error.message}` : "")
+        );
+        exportPdfBtn.disabled = false;
+        submitAssignmentBtn.disabled = false;
+        endNotesBusy();
+    };
+
     exportPdfBtn.addEventListener("click", (event) => {
         event.preventDefault();
-        exportNotePdf();
+        exportNotePdf().catch(reportUnexpected("PDF export"));
     });
 
     submitAssignmentBtn.addEventListener("click", (event) => {
         event.preventDefault();
-        submitAssignment();
+        submitAssignment().catch(reportUnexpected("Submission"));
     });
 }
 

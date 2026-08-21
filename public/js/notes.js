@@ -307,6 +307,18 @@ function closeSubmitComplete() {
     submitMemoBtn?.focus();
 }
 
+function continueToQuestionnaire() {
+    markMemoFinished();
+    updateSubmitButtonState();
+    logEvent({
+        eventType: "qualtrics_continue",
+        elementName: "Continue to Questionnaire",
+        page: "assignment",
+        eventProps: { memoId: config.memoId },
+    });
+    window.location.assign(config.qualtricsUrl);
+}
+
 /**
  * Runs instrumentation without letting it break the action it records.
  *
@@ -322,8 +334,8 @@ function recordQuietly(record) {
     }
 }
 
-async function submitAssignment() {
-    if (!pleadingEditor || submitAssignmentBtn.disabled) {
+async function submitMemo() {
+    if (!pleadingEditor || submitMemoBtn?.disabled) {
         return;
     }
 
@@ -333,23 +345,13 @@ async function submitAssignment() {
         return;
     }
 
-    const isResubmit = submitAssignmentBtn.classList.contains("is-submitted");
-    if (isResubmit) {
-        const confirmed = window.confirm(
-            "Are you sure you want to resubmit?\n\nThis will replace any previously submitted version."
-        );
-        if (!confirmed) {
-            return;
-        }
-    }
-
     recordQuietly(() => {
         logEvent({
             eventType: "submit",
-            elementName: isResubmit ? "Resubmit Assignment" : "Submit Assignment",
+            elementName: "Submit Memo",
             page: "assignment",
             valueNum: plainText.length,
-            eventProps: { format: "pdf", isResubmit, charCount: plainText.length },
+            eventProps: { format: "pdf", charCount: plainText.length },
         });
 
         // Pin the exact text that was submitted, independent of the 30s cadence.
@@ -359,8 +361,8 @@ async function submitAssignment() {
     try {
         // Inside the try so a failure here cannot leave the button permanently
         // disabled, which would make every later click a silent no-op.
-        submitAssignmentBtn.disabled = true;
-        exportPdfBtn.disabled = true;
+        submitMemoBtn.disabled = true;
+        setExportPdfDisabled(true);
         await beginNotesBusy("Please wait for submission confirmation…");
 
         const [, pdfBlob] = await Promise.all([
@@ -418,8 +420,10 @@ async function exportNotePdf() {
     );
 
     try {
-        exportPdfBtn.disabled = true;
-        submitAssignmentBtn.disabled = true;
+        setExportPdfDisabled(true);
+        if (submitMemoBtn) {
+            submitMemoBtn.disabled = true;
+        }
         await beginNotesBusy("Creating your PDF. Please wait…");
 
         const [, pdfBlob] = await Promise.all([
@@ -440,7 +444,9 @@ async function exportNotePdf() {
         );
     } finally {
         setExportPdfDisabled(false);
-        submitMemoBtn.disabled = false;
+        if (submitMemoBtn) {
+            submitMemoBtn.disabled = false;
+        }
         endNotesBusy();
     }
 }
@@ -514,19 +520,21 @@ function bindToolbar() {
             `${label} could not be completed. Please try again.` +
                 (error?.message ? `\n\n${error.message}` : "")
         );
-        exportPdfBtn.disabled = false;
-        submitAssignmentBtn.disabled = false;
+        setExportPdfDisabled(false);
+        if (submitMemoBtn) {
+            submitMemoBtn.disabled = false;
+        }
         endNotesBusy();
     };
 
-    exportPdfBtn.addEventListener("click", (event) => {
+    exportPdfBtn?.addEventListener("click", (event) => {
         event.preventDefault();
         exportNotePdf().catch(reportUnexpected("PDF export"));
     });
 
     submitMemoBtn.addEventListener("click", (event) => {
         event.preventDefault();
-        submitMemo();
+        submitMemo().catch(reportUnexpected("Submission"));
     });
 
     submitCompleteBack?.addEventListener("click", () => {
@@ -548,7 +556,7 @@ function bindToolbar() {
             return;
         }
         event.preventDefault();
-        submitAssignment().catch(reportUnexpected("Submission"));
+        closeSubmitComplete();
     });
 }
 

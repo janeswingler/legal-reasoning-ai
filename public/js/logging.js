@@ -25,7 +25,8 @@ let sessionClosed = false;
 function identityPayload() {
     return {
         participantID: config.participantID,
-        assignmentId: config.assignmentId,
+        // Wire and database still say assignmentId / assignment_id.
+        assignmentId: config.memoId,
         sessionID: config.sessionID,
         systemID: config.systemID,
     };
@@ -67,7 +68,7 @@ function logEvent({
         page: page ?? null,
         valueNum,
         durationMs,
-        eventProps: { assignmentId: config.assignmentId, ...eventProps },
+        eventProps: { assignmentId: config.memoId, ...eventProps },
         clientTs: new Date().toISOString(),
         uiVersion: UI_VERSION,
     });

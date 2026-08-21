@@ -18,7 +18,7 @@ if (!config.isAiEnabled || !chatForm || !sendBtn) {
 const sendBtnIcon = sendBtn.querySelector(".chat-composer__send-icon");
 
 const WELCOME_MESSAGE =
-    "Hi, I am your legal AI assistant. Ask a question about your assignment when you are ready.";
+    "Hi, I am your legal AI assistant. Ask a question about your memo when you are ready.";
 
 const SEND_ICON_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none">
     <path
@@ -194,7 +194,7 @@ function setPendingAttachments(attachments) {
 }
 
 function chatSessionStorageKey() {
-    return `lrai_chatSession_${config.assignmentId}`;
+    return `lrai_chatSession_${config.memoId}`;
 }
 
 function getStoredChatSessionId() {
@@ -212,7 +212,8 @@ function setStoredChatSessionId(id) {
 function sessionCreatePayload() {
     return {
         participantID: config.participantID,
-        assignmentId: config.assignmentId,
+        // Wire and database still say assignmentId / assignment_id.
+        assignmentId: config.memoId,
         sessionID: config.sessionID,
         systemID: config.systemID,
     };
@@ -221,7 +222,7 @@ function sessionCreatePayload() {
 function sessionQuery() {
     return (
         `participantID=${encodeURIComponent(config.participantID)}` +
-        `&assignmentId=${encodeURIComponent(config.assignmentId)}` +
+        `&assignmentId=${encodeURIComponent(config.memoId)}` +
         `&systemID=${encodeURIComponent(config.systemID)}`
     );
 }
@@ -560,7 +561,7 @@ async function uploadAttachment(file) {
         const formData = new FormData();
         formData.append("file", file);
         formData.append("participantID", config.participantID);
-        formData.append("assignmentId", config.assignmentId);
+        formData.append("assignmentId", config.memoId);
 
         const response = await fetch(
             `/api/chat/sessions/${encodeURIComponent(chatSessionId)}/attachments?${sessionQuery()}`,
@@ -716,8 +717,15 @@ function stopChatGeneration() {
 }
 
 function resizeChatInput() {
+    chatInput.style.overflowY = "hidden";
     chatInput.style.height = "auto";
-    chatInput.style.height = `${chatInput.scrollHeight}px`;
+    const nextHeight = chatInput.scrollHeight;
+    chatInput.style.height = `${nextHeight}px`;
+
+    const maxHeight = parseFloat(window.getComputedStyle(chatInput).maxHeight);
+    if (Number.isFinite(maxHeight) && nextHeight > maxHeight) {
+        chatInput.style.overflowY = "auto";
+    }
 }
 
 sendBtn.addEventListener("click", (event) => {
@@ -792,7 +800,7 @@ chatForm.addEventListener("submit", async (event) => {
                 sessionID: config.sessionID,
                 chatSessionId,
                 systemID: config.systemID,
-                assignmentId: config.assignmentId,
+                assignmentId: config.memoId,
                 userInput: text,
                 attachmentIds,
             }),

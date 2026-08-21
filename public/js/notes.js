@@ -1,6 +1,10 @@
 const noteToolbar = document.getElementById("noteToolbar");
 const exportPdfBtn = document.getElementById("exportPdfBtn");
-const submitAssignmentBtn = document.getElementById("submitAssignmentBtn");
+const submitMemoBtn = document.getElementById("submitMemoBtn");
+const memoSubmitStatus = document.getElementById("memoSubmitStatus");
+const submitCompleteOverlay = document.getElementById("submitCompleteOverlay");
+const submitCompleteBack = document.getElementById("submitCompleteBack");
+const submitCompleteContinue = document.getElementById("submitCompleteContinue");
 const noteEditorEl = document.getElementById("noteEditor");
 const pleadingPaperEl = document.getElementById("pleadingPaper");
 const pleadingScaleSizerEl = document.getElementById("pleadingScaleSizer");
@@ -23,6 +27,14 @@ let lastPointer = {
 
 function setSaveStatus(_text) {
     // Autosave / load status stays quiet; busy work uses setBusyStatus.
+}
+
+// The download control is commented out of app.html, so every export button
+// touch has to tolerate a missing element.
+function setExportPdfDisabled(disabled) {
+    if (exportPdfBtn) {
+        exportPdfBtn.disabled = disabled;
+    }
 }
 
 function positionBusyNote(clientX, clientY) {
@@ -171,13 +183,15 @@ function getPlainText() {
 
 function getNoteTitle() {
     const text = getPlainText();
-    return text.slice(0, 40) || `${config.assignmentId} note`;
+    return text.slice(0, 40) || `${config.memoId} draft`;
 }
 
 async function saveCurrentNote() {
     const payload = {
         participantID: config.participantID,
-        assignmentId: config.assignmentId,
+        // The API and the assignment_id database column still use the old
+        // name; only the participant-facing vocabulary moved to "memo".
+        assignmentId: config.memoId,
         sessionID: config.sessionID,
         systemID: config.systemID,
         title: getNoteTitle(),
@@ -235,62 +249,100 @@ function updateToolbarState() {
 }
 
 function getSafeExportBasename() {
-    const title = getPlainText().slice(0, 40).trim() || config.assignmentTitle || config.assignmentId;
-    return title.replace(/[^\w\- ]/g, "").trim() || "assignment";
+    const title = getPlainText().slice(0, 40).trim() || config.memoTitle || config.memoId;
+    return title.replace(/[^\w\- ]/g, "").trim() || "memo";
 }
 
-function updateSubmitButtonState(note) {
-    if (!submitAssignmentBtn) {
+function submitCompleteStorageKey() {
+    return `lrai_submitComplete_${config.participantID}_${config.memoId}`;
+}
+
+function hasFinishedMemo() {
+    try {
+        return localStorage.getItem(submitCompleteStorageKey()) === "1";
+    } catch (error) {
+        return false;
+    }
+}
+
+function markMemoFinished() {
+    try {
+        localStorage.setItem(submitCompleteStorageKey(), "1");
+    } catch (error) {
+        // Status still updates for this sitting.
+    }
+}
+
+function updateSubmitButtonState() {
+    const submitted = hasFinishedMemo();
+
+    if (memoSubmitStatus) {
+        memoSubmitStatus.textContent = submitted ? "Submitted" : "Not submitted";
+        memoSubmitStatus.parentElement?.classList.toggle("is-submitted", submitted);
+    }
+
+    if (submitMemoBtn) {
+        submitMemoBtn.textContent = "Submit";
+        submitMemoBtn.title = "Submit memo";
+    }
+}
+
+function openSubmitComplete() {
+    if (!submitCompleteOverlay) {
         return;
     }
 
-    if (note?.submittedAt) {
-        const submittedDate = new Date(note.submittedAt).toLocaleString();
-        submitAssignmentBtn.textContent = "Resubmit";
-        submitAssignmentBtn.classList.add("is-submitted");
-        submitAssignmentBtn.title = `Last submitted ${submittedDate}. Click to submit again.`;
+    submitCompleteOverlay.hidden = false;
+    document.body.classList.add("is-submit-complete");
+    submitCompleteContinue?.focus();
+}
+
+function closeSubmitComplete() {
+    if (!submitCompleteOverlay) {
         return;
     }
 
-    submitAssignmentBtn.textContent = "Submit";
-    submitAssignmentBtn.classList.remove("is-submitted");
-    submitAssignmentBtn.title = "Submit assignment to Google Drive";
+    submitCompleteOverlay.hidden = true;
+    document.body.classList.remove("is-submit-complete");
+    submitMemoBtn?.focus();
 }
 
-async function submitAssignment() {
-    if (!pleadingEditor || submitAssignmentBtn.disabled) {
+function continueToQuestionnaire() {
+    markMemoFinished();
+    updateSubmitButtonState();
+    logEvent({
+        eventType: "qualtrics_continue",
+        elementName: "Continue to Questionnaire",
+        page: "assignment",
+        eventProps: { memoId: config.memoId },
+    });
+    window.location.assign(config.qualtricsUrl);
+}
+
+async function submitMemo() {
+    if (!pleadingEditor || submitMemoBtn.disabled) {
         return;
     }
 
     const plainText = getPlainText();
     if (!plainText) {
-        alert("Your assignment is empty. Add text before submitting.");
+        alert("Your memo is empty. Add text before submitting.");
         return;
-    }
-
-    const isResubmit = submitAssignmentBtn.classList.contains("is-submitted");
-    if (isResubmit) {
-        const confirmed = window.confirm(
-            "Are you sure you want to resubmit?\n\nThis will replace any previously submitted version."
-        );
-        if (!confirmed) {
-            return;
-        }
     }
 
     logEvent({
         eventType: "submit",
-        elementName: isResubmit ? "Resubmit Assignment" : "Submit Assignment",
+        elementName: "Submit Memo",
         page: "assignment",
         valueNum: plainText.length,
-        eventProps: { format: "pdf", isResubmit, charCount: plainText.length },
+        eventProps: { format: "pdf", charCount: plainText.length },
     });
 
     // Pin the exact text that was submitted, independent of the 30s cadence.
     window.captureEditorSnapshot?.("submit", { force: true });
 
-    submitAssignmentBtn.disabled = true;
-    exportPdfBtn.disabled = true;
+    submitMemoBtn.disabled = true;
+    setExportPdfDisabled(true);
     await beginNotesBusy("Please wait for submission confirmation…");
 
     try {
@@ -302,7 +354,8 @@ async function submitAssignment() {
         const formData = new FormData();
         formData.append("pdf", pdfBlob, `${getSafeExportBasename()}.pdf`);
         formData.append("participantID", config.participantID);
-        formData.append("assignmentId", config.assignmentId);
+        // Wire field name is unchanged; see saveCurrentNote.
+        formData.append("assignmentId", config.memoId);
         formData.append("sessionID", config.sessionID);
         formData.append("systemID", config.systemID);
         formData.append("title", getNoteTitle());
@@ -318,32 +371,23 @@ async function submitAssignment() {
             throw new Error(result.error || "Submission failed");
         }
 
-        updateSubmitButtonState({
-            submittedAt: result.submittedAt,
-        });
-
         if (result.warning) {
-            alert(
-                `Your assignment was saved on the server.\n\n${result.warning}`
-            );
-            return;
+            console.warn(result.warning);
         }
 
-        const destination =
-            result.storage === "local" ? "the server" : "Google Drive";
-        alert(`Your assignment was submitted successfully to ${destination}.`);
+        openSubmitComplete();
     } catch (error) {
         console.error("Submission error:", error);
-        alert(error.message || "Could not submit assignment. Please try again.");
+        alert(error.message || "Could not submit memo. Please try again.");
     } finally {
-        submitAssignmentBtn.disabled = false;
-        exportPdfBtn.disabled = false;
+        submitMemoBtn.disabled = false;
+        setExportPdfDisabled(false);
         endNotesBusy();
     }
 }
 
 async function exportNotePdf() {
-    if (!pleadingEditor || exportPdfBtn.disabled) {
+    if (!pleadingEditor || exportPdfBtn?.disabled) {
         return;
     }
 
@@ -354,8 +398,8 @@ async function exportNotePdf() {
         eventProps: { format: "pdf" },
     });
 
-    exportPdfBtn.disabled = true;
-    submitAssignmentBtn.disabled = true;
+    setExportPdfDisabled(true);
+    submitMemoBtn.disabled = true;
     await beginNotesBusy("Creating your PDF. Please wait…");
 
     try {
@@ -376,8 +420,8 @@ async function exportNotePdf() {
                 : "Could not create PDF. Please try again."
         );
     } finally {
-        exportPdfBtn.disabled = false;
-        submitAssignmentBtn.disabled = false;
+        setExportPdfDisabled(false);
+        submitMemoBtn.disabled = false;
         endNotesBusy();
     }
 }
@@ -443,14 +487,36 @@ function bindToolbar() {
         updateToolbarState();
     });
 
-    exportPdfBtn.addEventListener("click", (event) => {
+    exportPdfBtn?.addEventListener("click", (event) => {
         event.preventDefault();
         exportNotePdf();
     });
 
-    submitAssignmentBtn.addEventListener("click", (event) => {
+    submitMemoBtn.addEventListener("click", (event) => {
         event.preventDefault();
-        submitAssignment();
+        submitMemo();
+    });
+
+    submitCompleteBack?.addEventListener("click", () => {
+        logEvent({
+            eventType: "qualtrics_defer",
+            elementName: "Back to Editing",
+            page: "assignment",
+            eventProps: { memoId: config.memoId },
+        });
+        closeSubmitComplete();
+    });
+
+    submitCompleteContinue?.addEventListener("click", () => {
+        continueToQuestionnaire();
+    });
+
+    document.addEventListener("keydown", (event) => {
+        if (event.key !== "Escape" || submitCompleteOverlay?.hidden) {
+            return;
+        }
+        event.preventDefault();
+        closeSubmitComplete();
     });
 }
 
@@ -477,7 +543,7 @@ async function initNote() {
 
     const url =
         `/api/assignments/current?participantID=${encodeURIComponent(config.participantID)}` +
-        `&assignmentId=${encodeURIComponent(config.assignmentId)}`;
+        `&assignmentId=${encodeURIComponent(config.memoId)}`;
 
     try {
         const response = await fetch(url);
@@ -486,7 +552,7 @@ async function initNote() {
             const note = await response.json();
             setEditorHtml(parseNoteContent(note.content || ""));
             invalidatePdfCache();
-            updateSubmitButtonState(note);
+            updateSubmitButtonState();
             setSaveStatus("Loaded");
             return;
         }

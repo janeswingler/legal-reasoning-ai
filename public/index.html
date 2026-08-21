@@ -3,10 +3,10 @@
     <head>
         <meta charset="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
-        <title>Legal Reasoning AI — Access</title>
+        <title>Course Name</title>
         <link rel="stylesheet" href="./css/variables.css?v=20260725a" />
         <link rel="stylesheet" href="./css/reset.css" />
-        <link rel="stylesheet" href="./css/enter.css?v=20260725a" />
+        <link rel="stylesheet" href="./css/enter.css?v=20260821g" />
         <link rel="stylesheet" href="./css/screen-gate.css?v=20260812a" />
     </head>
     <body class="enter-page">
@@ -14,7 +14,7 @@
             <div class="screen-gate__card">
                 <h1 class="screen-gate__title">This tool needs a larger screen</h1>
                 <p class="screen-gate__text">
-                    Legal Reasoning AI is built for a laptop or desktop. Please reopen it
+                    This tool is built for a laptop or desktop. Please reopen it
                     in a browser window at least 900 pixels wide.
                 </p>
                 <p class="screen-gate__hint">
@@ -23,68 +23,32 @@
                 </p>
             </div>
         </div>
-        <main class="enter-card" aria-labelledby="enterTitle">
-            <header class="enter-card__header">
-                <h1 id="enterTitle" class="enter-card__title">Legal Reasoning AI</h1>
-                <p class="enter-card__subtitle">Research prototype — authorized access only</p>
-            </header>
+        <main class="enter" aria-labelledby="enterTitle">
+            <p class="enter__kicker">Course Number</p>
+            <h1 id="enterTitle" class="enter__title">Course Name</h1>
+            <p id="enterMemoTitle" class="enter__memo"></p>
 
-            <form id="enterForm" class="enter-form" novalidate>
-                <div class="enter-field">
-                    <label class="enter-label" for="accessPassword">Access password</label>
-                    <input
-                        id="accessPassword"
-                        name="password"
-                        type="password"
-                        class="enter-input"
-                        autocomplete="current-password"
-                        required
-                    />
-                </div>
-
-                <div class="enter-field">
-                    <label class="enter-label" for="participantID">Participant ID</label>
+            <form id="enterForm" class="enter__form" novalidate>
+                <label class="enter__label" for="participantID">Participant ID</label>
+                <div class="enter__row">
                     <input
                         id="participantID"
                         name="participantID"
                         type="text"
-                        class="enter-input"
+                        class="enter__input"
                         autocomplete="off"
                         spellcheck="false"
                         required
                     />
+                    <button type="submit" class="enter__submit" id="enterSubmitBtn">
+                        Continue
+                    </button>
                 </div>
-
-                <div class="enter-field">
-                    <label class="enter-label" for="assignmentId">Week</label>
-                    <input
-                        id="assignmentId"
-                        name="assignmentId"
-                        type="text"
-                        class="enter-input"
-                        placeholder="week-01"
-                        autocomplete="off"
-                        spellcheck="false"
-                        required
-                    />
-                </div>
-
-                <div class="enter-field">
-                    <label class="enter-label" for="systemID">Study mode</label>
-                    <select id="systemID" name="systemID" class="enter-input enter-select">
-                        <option value="2" selected>AI chat + assignment editor</option>
-                        <option value="1">Assignment editor only (no AI)</option>
-                    </select>
-                </div>
-
-                <p id="enterError" class="enter-error" hidden role="alert"></p>
-
-                <button type="submit" class="enter-submit" id="enterSubmitBtn">
-                    Continue to app
-                </button>
+                <p id="enterError" class="enter__error" hidden role="alert"></p>
             </form>
         </main>
         <script src="./js/screen-gate.js?v=20260812a"></script>
-        <script src="./js/enter.js?v=20260725a"></script>
+        <script src="./js/study-routing.js?v=20260821a"></script>
+        <script src="./js/enter.js?v=20260821d"></script>
     </body>
 </html>

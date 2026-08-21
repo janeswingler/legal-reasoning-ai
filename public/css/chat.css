@@ -553,11 +553,28 @@
   background: transparent;
   resize: none;
   outline: none;
+  overflow-x: hidden;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(28, 27, 25, 0.22) transparent;
   font: inherit;
   font-size: var(--chat-font-md);
   line-height: 1.5;
   color: var(--text);
   field-sizing: content;
+}
+
+.chat-composer__bubble textarea::-webkit-scrollbar {
+  width: 7px;
+}
+
+.chat-composer__bubble textarea::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.chat-composer__bubble textarea::-webkit-scrollbar-thumb {
+  background: rgba(28, 27, 25, 0.2);
+  border-radius: 999px;
 }
 
 .chat-composer__bubble textarea::placeholder {

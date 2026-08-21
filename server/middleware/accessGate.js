@@ -11,7 +11,10 @@ const PUBLIC_PATHS = new Set([
     "/css/variables.css",
     "/css/reset.css",
     "/css/enter.css",
+    "/css/screen-gate.css",
     "/js/enter.js",
+    "/js/screen-gate.js",
+    "/js/study-routing.js",
 ]);
 
 const PUBLIC_PREFIXES = ["/api/access", "/api/health"];

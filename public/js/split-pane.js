@@ -1,17 +1,16 @@
 /*
- * Drag handle that divides the chat pane from the assignment editor.
+ * Drag handle that divides the chat pane from the submission editor.
  *
  * The ratio is the chat pane's share of the width the two panes divide between
  * them (gaps and the handle excluded), so it can be written straight into the
- * two fr values on .app-main. Travel is bounded so that no reachable position is
- * a useless one: each pane keeps a working minimum, and the editor stops growing
- * once the page hits maximum zoom, past which the extra width would only become
- * blank margin. Those bounds live here rather than in a minmax() track because a
- * grid track cannot mix a px floor with an fr maximum.
+ * two fr values on .app-main. The study default is an even split. Travel is
+ * bounded so that no reachable position is a useless one: each pane keeps a
+ * working minimum. Those bounds live here rather than in a minmax() track
+ * because a grid track cannot mix a px floor with an fr maximum.
  */
-const SPLIT_STORAGE_KEY = "aillr.splitRatio";
+const SPLIT_STORAGE_KEY = "aillr.splitRatio.v2";
 const SPLIT_DEFAULT_RATIO = 0.5;
-const SPLIT_MIN_CHAT_PX = 440;
+const SPLIT_MIN_CHAT_PX = 400;
 const SPLIT_MIN_EDITOR_PX = 360;
 const SPLIT_KEYBOARD_STEP = 0.02;
 
@@ -54,31 +53,6 @@ const SPLIT_KEYBOARD_STEP = 0.02;
         return main.getBoundingClientRect().width - paddingX - gapX - handle.offsetWidth;
     }
 
-    /**
-     * Editor pane width at which the page reaches maximum zoom. Beyond it the page
-     * cannot grow, so the surplus would show up as blank margin either side.
-     * Infinity while unmeasurable, which leaves the pane uncapped rather than
-     * guessing.
-     */
-    function getMaxEditorPaneWidth() {
-        const notes = document.querySelector(".panel-notes");
-        const paper = document.getElementById("pleadingPaper");
-        if (!notes || !paper || !paper.clientWidth) {
-            return Infinity;
-        }
-
-        const pageWidth = parseFloat(
-            window.getComputedStyle(paper).getPropertyValue("--pleading-editor-page-width")
-        );
-        if (!(pageWidth > 0) || typeof PLEADING_EDITOR_MAX_ZOOM !== "number") {
-            return Infinity;
-        }
-
-        // Border, padding and the reserved scrollbar gutter sit outside the page.
-        const chromeX = notes.getBoundingClientRect().width - paper.clientWidth;
-        return pageWidth * PLEADING_EDITOR_MAX_ZOOM + chromeX;
-    }
-
     /** Legal range for the chat share, or null when the window is too narrow. */
     function getRatioBounds() {
         const shared = getSharedWidth();
@@ -86,10 +60,7 @@ const SPLIT_KEYBOARD_STEP = 0.02;
             return null;
         }
 
-        const min = Math.max(
-            SPLIT_MIN_CHAT_PX / shared,
-            (shared - getMaxEditorPaneWidth()) / shared
-        );
+        const min = SPLIT_MIN_CHAT_PX / shared;
         const max = 1 - SPLIT_MIN_EDITOR_PX / shared;
         return min > max ? null : { min, max };
     }
@@ -199,10 +170,6 @@ const SPLIT_KEYBOARD_STEP = 0.02;
     });
 
     window.addEventListener("resize", () => applyRatio(desiredRatio));
-
-    // The page-width variable this reads to cap the editor is set by the editor
-    // itself, which loads after this script, so re-clamp once everything is up.
-    window.addEventListener("load", () => applyRatio(desiredRatio));
 
     applyRatio(desiredRatio);
 })();

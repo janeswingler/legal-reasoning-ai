@@ -1,6 +1,9 @@
 const express = require("express");
-const { checkPassword, isAccessGateEnabled } = require("../services/accessGate.js");
 const { setAccessCookie } = require("../middleware/accessGate.js");
+const {
+    resolveMemoNumber,
+    resolveSystemIdFromParity,
+} = require("../services/studyRouting.js");
 
 const router = express.Router();
 
@@ -19,26 +22,32 @@ function sanitizeId(value, fieldName) {
 }
 
 router.post("/verify", (req, res) => {
-    const password = String(req.body?.password || "");
-    if (isAccessGateEnabled() && !checkPassword(password)) {
-        return res.status(401).json({ error: "Incorrect access password" });
-    }
-
     let participantID;
-    let assignmentId;
+    let memoID;
     try {
         participantID = sanitizeId(req.body?.participantID, "Participant ID");
-        assignmentId = sanitizeId(req.body?.assignmentId, "Week");
+        memoID = sanitizeId(req.body?.memoID ?? req.body?.assignmentId, "Memo ID");
     } catch (error) {
         return res.status(400).json({ error: error.message });
     }
 
-    const systemID = req.body?.systemID === "1" ? "1" : "2";
+    const memoNumber = resolveMemoNumber(memoID);
+    if (!memoNumber) {
+        return res.status(400).json({ error: "Memo ID must be a number from 1 to 6" });
+    }
+
+    const systemID = resolveSystemIdFromParity(participantID, memoNumber);
+    if (!systemID) {
+        return res.status(400).json({
+            error: "Participant ID must include a number, for example 33",
+        });
+    }
+
     setAccessCookie(req, res);
 
     const params = new URLSearchParams({
         participantID,
-        assignment: assignmentId,
+        memoID: String(memoNumber),
         systemID,
     });
 

@@ -7,9 +7,9 @@
 
         <link rel="stylesheet" href="./css/variables.css?v=20260711v" />
         <link rel="stylesheet" href="./css/reset.css" />
-        <link rel="stylesheet" href="./css/layout.css?v=20260812b" />
-        <link rel="stylesheet" href="./css/chat.css?v=20260812b" />
-        <link rel="stylesheet" href="./css/notes.css?v=20260812b" />
+        <link rel="stylesheet" href="./css/layout.css?v=20260821d" />
+        <link rel="stylesheet" href="./css/chat.css?v=20260821a" />
+        <link rel="stylesheet" href="./css/notes.css?v=20260821g" />
         <link rel="stylesheet" href="./css/screen-gate.css?v=20260812a" />
 
     </head>
@@ -29,9 +29,19 @@
         </div>
         <script>
             (function () {
-                var raw = new URLSearchParams(location.search).get("systemID");
-                var id = raw && String(raw).trim() === "1" ? "1" : "2";
-                document.body.classList.add(id === "1" ? "system-1" : "system-2");
+                var params = new URLSearchParams(location.search);
+                var participantMatch = String(params.get("participantID") || "").match(/\d+/);
+                var memoMatch = String(params.get("memoID") || params.get("assignment") || "").match(/\d+/);
+                var participantNumber = participantMatch ? parseInt(participantMatch[0], 10) : null;
+                var memoNumber = memoMatch ? parseInt(memoMatch[0], 10) : null;
+                var systemID = "1";
+                if (participantNumber !== null && memoNumber !== null) {
+                    systemID =
+                        participantNumber % 2 === memoNumber % 2 ? "1" : "2";
+                }
+                document.body.classList.add(
+                    systemID === "1" ? "system-1" : "system-2"
+                );
             })();
         </script>
         <main class="app-main">
@@ -39,7 +49,7 @@
                 <div class="chat-layout" id="chatLayout">
                     <aside class="chat-sidebar" id="chatSidebar" aria-label="Chat sessions">
                         <div class="chat-sidebar__header">
-                            <h1 class="chat-sidebar__title" id="assignmentTitle"></h1>
+                            <h1 class="chat-sidebar__title" data-memo-title></h1>
                             <button
                                 type="button"
                                 class="chat-sidebar-toggle"
@@ -170,7 +180,7 @@
                 id="appSplitHandle"
                 role="separator"
                 aria-orientation="vertical"
-                aria-label="Resize chat and assignment editor"
+                aria-label="Resize chat and submission editor"
                 aria-valuemin="30"
                 aria-valuemax="70"
                 aria-valuenow="50"
@@ -178,18 +188,34 @@
                 title="Drag to resize. Double-click to reset."
             ></div>
 
-            <section class="panel panel-notes" aria-label="Assignment editor">
+            <section class="panel panel-notes" aria-label="Submission editor">
                 <div class="panel-notes__header">
-                    <h2 class="panel-notes__label">Assignment Editor</h2>
-                    <button
-                        type="button"
-                        id="submitAssignmentBtn"
-                        class="note-submit-btn"
-                        aria-label="Submit assignment to Google Drive"
-                        title="Submit assignment"
-                    >
-                        Submit
-                    </button>
+                    <div class="panel-notes__lead">
+                        <div class="panel-notes__heading">
+                            <h2 class="panel-notes__label">Submission Editor</h2>
+                            <!-- System 1 hides the chat sidebar, so this is where its memo number shows. -->
+                            <span class="panel-notes__memo" data-memo-title></span>
+                        </div>
+                        <p class="panel-notes__due">
+                            <span class="panel-notes__meta-key">Due</span>
+                            Date and time
+                        </p>
+                    </div>
+                    <div class="panel-notes__actions">
+                        <button
+                            type="button"
+                            id="submitMemoBtn"
+                            class="note-submit-btn"
+                            aria-label="Submit memo"
+                            title="Submit memo"
+                        >
+                            Submit
+                        </button>
+                        <p class="panel-notes__status">
+                            <span class="panel-notes__meta-key">Status</span>
+                            <span id="memoSubmitStatus">Not submitted</span>
+                        </p>
+                    </div>
                 </div>
                 <div id="noteToolbar" class="note-format-toolbar" aria-label="Text formatting">
                     <div class="note-format-toolbar__group">
@@ -239,6 +265,12 @@
                         <button type="button" data-command="insertUnorderedList" aria-label="Bullet list" title="Bullet list">•</button>
                         <button type="button" data-insert="§" aria-label="Insert section symbol" title="Section (§)">§</button>
                     </div>
+                    <!--
+                    Students must not keep a local copy of the assignment, so the
+                    PDF download control is withheld from both study systems. The
+                    export code path in js/pleading/export-pdf.js is left in place;
+                    restoring this markup re-enables it.
+
                     <div class="note-format-toolbar__group note-format-toolbar__group--end">
                         <button
                             type="button"
@@ -258,6 +290,7 @@
                             </svg>
                         </button>
                     </div>
+                    -->
                 </div>
 
                 <div id="pleadingPaper" class="pleading-paper">
@@ -275,7 +308,7 @@
                                                 role="textbox"
                                                 aria-multiline="true"
                                                 aria-label="Notes"
-                                                data-placeholder="Write your assignment here"
+                                                data-placeholder="Write your memo here"
                                                 spellcheck="true"
                                             ></div>
                                         </div>
@@ -297,6 +330,55 @@
             <span class="note-busy-cursor-note__spinner" aria-hidden="true"></span>
             <span id="noteBusyStatusText" class="note-busy-cursor-note__text"></span>
         </p>
+        <div
+            id="submitCompleteOverlay"
+            class="submit-complete"
+            hidden
+        >
+            <div
+                class="submit-complete__card"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="submitCompleteTitle"
+                aria-describedby="submitCompleteCopy"
+            >
+                <h2 id="submitCompleteTitle" class="submit-complete__title">
+                    Memo successfully submitted.
+                </h2>
+                <ol class="submit-complete__steps">
+                    <li class="submit-complete__step is-done">
+                        <span class="submit-complete__tick" aria-hidden="true">
+                            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                                <path
+                                    d="M3 7.2l2.6 2.6L11 4.2"
+                                    stroke="currentColor"
+                                    stroke-width="1.75"
+                                    stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                />
+                            </svg>
+                        </span>
+                        <span>Submission</span>
+                    </li>
+                    <li class="submit-complete__step is-pending">
+                        <span class="submit-complete__tick" aria-hidden="true"></span>
+                        <span>Post-task questionnaire <em>(required)</em></span>
+                    </li>
+                    </ol>
+                <p id="submitCompleteCopy" class="submit-complete__copy">
+                    Are you sure you are done editing? If yes, continue to the
+                    post-task questionnaire. If not, you can return to the editor.
+                </p>
+                <div class="submit-complete__actions">
+                    <button type="button" class="submit-complete__back" id="submitCompleteBack">
+                        No, back to editing
+                    </button>
+                    <button type="button" class="submit-complete__continue" id="submitCompleteContinue">
+                        Yes, continue to questionnaire
+                    </button>
+                </div>
+            </div>
+        </div>
         <script src="./js/screen-gate.js?v=20260812a"></script>
         <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
         <script src="./js/pleading/layout-spec.js?v=20260711b"></script>

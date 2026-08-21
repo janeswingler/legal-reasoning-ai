@@ -1,6 +1,6 @@
 const STORAGE_KEYS = {
     participantID: "lrai_participantID",
-    assignmentId: "lrai_assignmentId",
+    memoId: "lrai_memoId",
 };
 
 // One study session = one sitting. sessionStorage is scoped to the tab and is
@@ -23,45 +23,26 @@ function createSessionId() {
     return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-function formatAssignmentTitle(assignmentId) {
-    const weekMatch = assignmentId.match(/^week-(\d+)$/i);
-    if (weekMatch) {
-        const weekNum = parseInt(weekMatch[1], 10);
-        return `Week ${weekNum} Assignment`;
-    }
-
-    const label = assignmentId
-        .replace(/[-_]+/g, " ")
-        .replace(/\b\w/g, (char) => char.toUpperCase());
-    return `${label} Assignment`;
-}
-
-/**
- * Study modes (pass in the student URL):
- *   systemID=1 — Assignment Editor only (no AI chat)
- *   systemID=2 — AI chat + Assignment Editor (default if missing/invalid)
- * Examples:
- *   /app.html?participantID=abc&assignment=week-01&systemID=1
- *   /app.html?participantID=abc&assignment=week-01&systemID=2
- */
-function resolveSystemId(raw) {
-    return raw === "1" ? "1" : "2";
-}
-
 const urlParticipant = readParam("participantID");
-const urlAssignment = readParam("assignment");
-const systemID = resolveSystemId(readParam("systemID"));
-const isAiEnabled = systemID === "2";
 
 const participantID =
     urlParticipant ||
     localStorage.getItem(STORAGE_KEYS.participantID) ||
     "demo-participant";
 
-const assignmentId =
-    urlAssignment ||
-    localStorage.getItem(STORAGE_KEYS.assignmentId) ||
-    "week-01";
+const memoNumber =
+    resolveMemoNumber(readParam("memoID")) ??
+    // Older links used assignment=week-01. Keep reading them until those URLs retire.
+    resolveMemoNumber(readParam("assignment")) ??
+    resolveMemoNumber(localStorage.getItem(STORAGE_KEYS.memoId)) ??
+    1;
+
+const memoId = toMemoId(memoNumber);
+
+// Same parity → system 1 (no AI). Different parity → system 2 (AI).
+// URL systemID is ignored so a student cannot switch conditions.
+const systemID = resolveSystemIdFromParity(participantID, memoNumber) || "1";
+const isAiEnabled = systemID === "2";
 
 let sessionID = sessionStorage.getItem(SESSION_STORAGE_KEY);
 const isNewSession = !sessionID;
@@ -71,22 +52,25 @@ if (isNewSession) {
 }
 
 localStorage.setItem(STORAGE_KEYS.participantID, participantID);
-localStorage.setItem(STORAGE_KEYS.assignmentId, assignmentId);
+localStorage.setItem(STORAGE_KEYS.memoId, memoId);
 
 const config = {
     participantID,
-    assignmentId,
+    memoNumber,
+    memoId,
     sessionID,
     systemID,
     isAiEnabled,
     isNewSession,
-    assignmentTitle: formatAssignmentTitle(assignmentId),
+    memoTitle: `Memo ${memoNumber}`,
+    // Placeholder until the study Qualtrics survey is ready.
+    qualtricsUrl: "https://myusf.usfca.edu/ets/educational-technologies/qualtrics",
 };
 
 document.body.classList.remove("system-1", "system-2");
 document.body.classList.add(isAiEnabled ? "system-2" : "system-1");
 
-const assignmentTitleEl = document.getElementById("assignmentTitle");
-if (assignmentTitleEl) {
-    assignmentTitleEl.textContent = config.assignmentTitle;
-}
+// System 1 has no chat sidebar, so both systems get their own memo heading.
+document.querySelectorAll("[data-memo-title]").forEach((element) => {
+    element.textContent = config.memoTitle;
+});

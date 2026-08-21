@@ -9,18 +9,81 @@
 }
 
 .panel-notes__header {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "heading submit"
+    "due status";
   align-items: center;
-  justify-content: space-between;
-  gap: var(--space-2);
+  column-gap: var(--space-3);
+  row-gap: 0.4rem;
   flex-shrink: 0;
   padding-bottom: var(--space-2);
   border-bottom: 1px solid var(--border);
 }
 
+.panel-notes__lead,
+.panel-notes__actions {
+  display: contents;
+}
+
+.panel-notes__heading {
+  grid-area: heading;
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
 .panel-notes__label {
   font-weight: 600;
   letter-spacing: 0.04em;
+}
+
+/* System 2 already shows the memo number in the chat sidebar; system 1 has no
+   sidebar, so the editor header is the only place it can appear. */
+.panel-notes__memo {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+body.system-2 .panel-notes__memo {
+  display: none;
+}
+
+.panel-notes__due,
+.panel-notes__status {
+  display: flex;
+  align-items: baseline;
+  gap: 0.4rem;
+  margin: 0;
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.panel-notes__due {
+  grid-area: due;
+}
+
+.panel-notes__status {
+  grid-area: status;
+  justify-self: end;
+}
+
+.panel-notes__meta-key {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.panel-notes__meta-key::after {
+  content: ":";
+}
+
+.panel-notes__status.is-submitted {
+  color: var(--text);
 }
 
 .note-format-toolbar {
@@ -40,6 +103,8 @@
 }
 
 .note-submit-btn {
+  grid-area: submit;
+  justify-self: end;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -70,18 +135,6 @@
 .note-submit-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
-}
-
-.note-submit-btn.is-submitted {
-  background: #1c1b19;
-  border-color: #1c1b19;
-  color: #ffffff;
-}
-
-.note-submit-btn.is-submitted:hover {
-  background: #0a0a09;
-  border-color: #0a0a09;
-  color: #ffffff;
 }
 
 .note-export-pdf-btn {
@@ -516,6 +569,7 @@ body.is-notes-busy * {
 
 @media print {
   .note-format-toolbar,
+  .panel-notes__memo,
   .panel-notes__label {
     display: none !important;
   }
@@ -524,4 +578,146 @@ body.is-notes-busy * {
     border: none;
     overflow: visible;
   }
+}
+
+.submit-complete {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  padding: var(--space-5);
+  background: rgba(245, 244, 241, 0.82);
+}
+
+.submit-complete[hidden] {
+  display: none;
+}
+
+body.is-submit-complete {
+  overflow: hidden;
+}
+
+.submit-complete__card {
+  width: min(100%, 26rem);
+  padding: var(--space-5) 1.75rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg-panel);
+  box-shadow: 0 1px 2px rgba(28, 27, 25, 0.04);
+}
+
+.submit-complete__title {
+  margin: 0;
+  font-size: var(--font-size-xl);
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.submit-complete__steps {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-5) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.submit-complete__step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+}
+
+.submit-complete__step em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.submit-complete__tick {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border: 1.5px solid currentColor;
+  border-radius: 50%;
+}
+
+.submit-complete__step.is-done {
+  color: var(--text);
+}
+
+.submit-complete__step.is-done .submit-complete__tick {
+  background: #1c1b19;
+  border-color: #1c1b19;
+  color: #fff;
+}
+
+.submit-complete__step.is-pending {
+  color: var(--text-muted);
+}
+
+.submit-complete__step.is-pending .submit-complete__tick {
+  border-color: #c5c1b8;
+  color: #c5c1b8;
+}
+
+.submit-complete__copy {
+  margin: var(--space-5) 0 0;
+  color: var(--text);
+  font-size: var(--font-size-sm);
+  line-height: 1.5;
+}
+
+.submit-complete__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+.submit-complete__back,
+.submit-complete__continue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2rem;
+  padding: 0 0.95rem;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.submit-complete__back {
+  border: 1px solid var(--border-strong);
+  background: transparent;
+  color: var(--text);
+}
+
+.submit-complete__back:hover {
+  background: var(--bg-inset);
+}
+
+.submit-complete__continue {
+  border: 1px solid #1c1b19;
+  background: #1c1b19;
+  color: #fff;
+}
+
+.submit-complete__continue:hover {
+  background: #0a0a09;
+  border-color: #0a0a09;
+}
+
+.submit-complete__back:focus-visible,
+.submit-complete__continue:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }

@@ -70,7 +70,7 @@ number the event is about).
 | `event_type` | What it means | What is in `duration_ms` / `value_num` |
 | --- | --- | --- |
 | `session_start` | App opened. `isNewSession: false` in the details means a page refresh rather than a fresh arrival | — |
-| `session_end` | App closed | — |
+| _(no event)_ | App closing is not written to this table. It is recorded on the sitting itself, as `ended_at` and `end_reason` in `study_sessions` | — |
 | `heartbeat` | Emitted every 30 seconds. Details record whether the tab was visible, whether the window had focus, and whether there was any activity | Length of the interval |
 | `window_blur` | Participant moved to another application or window | How long they had been present |
 | `window_focus` | Participant came back | **How long they were away** |

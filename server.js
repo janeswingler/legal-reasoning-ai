@@ -25,6 +25,15 @@ app.get("/api/health", (req, res) => {
     res.json({ ok: true });
 });
 
+// Canvas links may be written as /memoID=1. Send them to the landing page query.
+app.use((req, res, next) => {
+    const match = req.path.replace(/\/+/g, "/").match(/^\/memoID=(\d+)$/i);
+    if (!match) {
+        return next();
+    }
+    return res.redirect(302, `/?memoID=${match[1]}`);
+});
+
 app.use("/api/access", accessRoutes);
 app.use(accessGateMiddleware);
 

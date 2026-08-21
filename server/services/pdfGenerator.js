@@ -140,20 +140,81 @@ function buildBootstrapHtml() {
     );
 }
 
+function firstExistingPath(candidates) {
+    for (const candidate of candidates) {
+        if (candidate && fs.existsSync(candidate)) {
+            return candidate;
+        }
+    }
+    return null;
+}
+
+function findCachedChrome(cacheRoot) {
+    const chromeRoot = path.join(cacheRoot, "chrome");
+    if (!cacheRoot || !fs.existsSync(chromeRoot)) {
+        return null;
+    }
+
+    const names = fs.readdirSync(chromeRoot).sort().reverse();
+    const relatives = [
+        ["chrome-win64", "chrome.exe"],
+        ["chrome-headless-shell-win64", "chrome-headless-shell.exe"],
+        ["chrome-linux64", "chrome"],
+        ["chrome-headless-shell-linux64", "chrome-headless-shell"],
+        [
+            "chrome-mac-x64",
+            "Google Chrome for Testing.app",
+            "Contents",
+            "MacOS",
+            "Google Chrome for Testing",
+        ],
+    ];
+
+    for (const name of names) {
+        for (const relative of relatives) {
+            const candidate = path.join(chromeRoot, name, ...relative);
+            if (fs.existsSync(candidate)) {
+                return candidate;
+            }
+        }
+    }
+
+    return null;
+}
+
+// Puppeteer looks in PUPPETEER_CACHE_DIR. Some shells rewrite that to an empty
+// cache, so also check the real user cache and a system Chrome install.
+function resolveChromeExecutable() {
+    return firstExistingPath([
+        process.env.PUPPETEER_EXECUTABLE_PATH,
+        findCachedChrome(process.env.PUPPETEER_CACHE_DIR || ""),
+        findCachedChrome(path.join(os.homedir(), ".cache", "puppeteer")),
+        "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+        "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+        "/usr/bin/google-chrome",
+        "/usr/bin/google-chrome-stable",
+        "/usr/bin/chromium",
+        "/usr/bin/chromium-browser",
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+    ]);
+}
+
 async function getBrowser() {
     if (!browserPromise) {
         browserPromise = loadPuppeteer()
-            .then((puppeteer) =>
-                puppeteer.launch({
+            .then((puppeteer) => {
+                const executablePath = resolveChromeExecutable();
+                return puppeteer.launch({
                     headless: true,
+                    ...(executablePath ? { executablePath } : {}),
                     args: [
                         "--no-sandbox",
                         "--disable-dev-shm-usage",
                         "--allow-file-access-from-files",
                         "--font-render-hinting=none",
                     ],
-                })
-            )
+                });
+            })
             .catch((error) => {
                 // Do not cache a failed launch, or every later request inherits it.
                 browserPromise = null;

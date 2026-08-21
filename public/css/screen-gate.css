@@ -1,7 +1,7 @@
 /*
  * Minimum viewport gate.
  *
- * The app has no small-screen layout: the assignment column has a 20rem floor
+ * The app has no small-screen layout: the submission editor column has a 20rem floor
  * and the pleading page scales down to whatever space is left, so below ~900px
  * the editor text renders too small to write with. Gating in CSS rather than JS
  * means the block paints before any script runs and cannot be skipped if a

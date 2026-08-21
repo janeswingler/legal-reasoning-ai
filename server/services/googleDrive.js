@@ -145,42 +145,34 @@ function buildSubmissionFilename(participantID, assignmentId) {
     return `${safeAssignment}__${safeParticipant}.pdf`;
 }
 
-async function uploadSubmissionPdf({
-    buffer,
-    participantID,
-    assignmentId,
-    existingFileId = null,
-}) {
-    const drive = await getDriveClient();
-    const folderId = await resolveUploadFolderId(drive, assignmentId);
-    const filename = buildSubmissionFilename(participantID, assignmentId);
-    const media = {
+/** A fresh stream per attempt - a consumed one cannot be retried. */
+function buildUploadMedia(buffer) {
+    return {
         mimeType: "application/pdf",
         body: Readable.from(buffer),
     };
+}
 
-    if (existingFileId) {
-        const updated = await drive.files.update({
-            fileId: existingFileId,
-            media,
-            fields: "id, name, webViewLink",
-            supportsAllDrives: true,
-        });
+/**
+ * Drive answers 404 both for a file that no longer exists and for one this
+ * OAuth client cannot reach.
+ *
+ * The app holds the drive.file scope, which grants access only to files the
+ * client itself created. A submission recorded by a different client (another
+ * developer's instance, or a re-issued client ID) is therefore invisible here,
+ * even though it is plainly present in the Drive UI.
+ */
+function isMissingFileError(error) {
+    return error?.code === 404 || error?.response?.status === 404;
+}
 
-        return {
-            fileId: updated.data.id,
-            fileName: updated.data.name || filename,
-            webViewLink: updated.data.webViewLink || null,
-            folderId,
-        };
-    }
-
+async function createSubmissionFile(drive, { buffer, filename, folderId }) {
     const created = await drive.files.create({
         requestBody: {
             name: filename,
             parents: [folderId],
         },
-        media,
+        media: buildUploadMedia(buffer),
         fields: "id, name, webViewLink",
         supportsAllDrives: true,
     });
@@ -191,6 +183,49 @@ async function uploadSubmissionPdf({
         webViewLink: created.data.webViewLink || null,
         folderId,
     };
+}
+
+async function uploadSubmissionPdf({
+    buffer,
+    participantID,
+    assignmentId,
+    existingFileId = null,
+}) {
+    const drive = await getDriveClient();
+    const folderId = await resolveUploadFolderId(drive, assignmentId);
+    const filename = buildSubmissionFilename(participantID, assignmentId);
+
+    if (existingFileId) {
+        try {
+            const updated = await drive.files.update({
+                fileId: existingFileId,
+                media: buildUploadMedia(buffer),
+                fields: "id, name, webViewLink",
+                supportsAllDrives: true,
+            });
+
+            return {
+                fileId: updated.data.id,
+                fileName: updated.data.name || filename,
+                webViewLink: updated.data.webViewLink || null,
+                folderId,
+            };
+        } catch (error) {
+            if (!isMissingFileError(error)) {
+                throw error;
+            }
+
+            // Fall through and upload a new file. The caller stores the new id,
+            // so the unreachable one is replaced rather than retried forever.
+            console.warn(
+                `[drive] submission ${filename} could not reach file ${existingFileId} ` +
+                    "(deleted, trashed, or created by a different OAuth client). " +
+                    "Uploading a replacement."
+            );
+        }
+    }
+
+    return createSubmissionFile(drive, { buffer, filename, folderId });
 }
 
 function isGoogleDriveConfigured() {

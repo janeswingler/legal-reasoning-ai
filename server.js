@@ -7,9 +7,25 @@ const path = require("path");
 const { connectDB } = require("./server/config/db.js");
 const { accessGateMiddleware } = require("./server/middleware/accessGate.js");
 const { closeBrowser, warmUp } = require("./server/services/pdfGenerator.js");
+const assignmentsDb = require("./server/db/assignments.js");
+const { sanitizeId } = require("./server/services/studyIdentifiers.js");
+const { resolveMemoNumber } = require("./server/services/studyRouting.js");
+const {
+    loadParticipantConditions,
+    getSystemId,
+    getParticipantCount,
+    getMemoCount,
+} = require("./server/services/participantConditions.js");
+const {
+    ASSIGNMENT_STATES,
+    findAssignmentState,
+    buildStateRedirect,
+    buildEditorUrl,
+} = require("./server/services/assignmentState.js");
 
 const accessRoutes = require("./server/routes/access.js");
 const assignmentsRoutes = require("./server/routes/assignments.js");
+const questionnaireRoutes = require("./server/routes/questionnaire.js");
 const chatRoutes = require("./server/routes/chat.js");
 const systemInteractionRoutes = require("./server/routes/systemInteractions.js");
 const telemetryRoutes = require("./server/routes/telemetry.js");
@@ -35,7 +51,67 @@ app.use((req, res, next) => {
 });
 
 app.use("/api/access", accessRoutes);
+
+// Outside the access gate: participants come back from Qualtrics on whatever
+// machine they took the survey on, which may never have held the cookie.
+app.use("/questionnaire", questionnaireRoutes);
+
 app.use(accessGateMiddleware);
+
+/**
+ * Everything the editor page trusts is settled here, before it is served.
+ *
+ * The browser reads its condition straight from the URL, so this route is what
+ * makes that safe: an unknown participant, an out-of-range memo, or a hand
+ * edited systemID never reaches the page.
+ */
+app.get("/app.html", async (req, res, next) => {
+    let participantID;
+    try {
+        participantID = sanitizeId(req.query.participantID, "Participant ID");
+    } catch (error) {
+        return res.redirect(302, "/");
+    }
+
+    const memoNumber = resolveMemoNumber(req.query.memoID ?? req.query.assignment);
+    if (!memoNumber) {
+        return res.redirect(302, "/");
+    }
+
+    const systemID = getSystemId(participantID, memoNumber);
+    if (!systemID) {
+        return res.redirect(302, "/");
+    }
+
+    try {
+        const { state } = await findAssignmentState(
+            assignmentsDb,
+            participantID,
+            memoNumber
+        );
+
+        if (state !== ASSIGNMENT_STATES.WRITING) {
+            return res.redirect(
+                302,
+                buildStateRedirect({ state, participantID, memoNumber, systemID })
+            );
+        }
+    } catch (error) {
+        // A lookup failure should not lock anyone out of their own writing.
+        console.error("Editor state check failed:", error);
+    }
+
+    // Rewrite rather than reject: a stale or edited link still lands the
+    // participant in their assigned condition.
+    if (req.query.systemID !== systemID) {
+        return res.redirect(
+            302,
+            buildEditorUrl({ participantID, memoNumber, systemID })
+        );
+    }
+
+    return next();
+});
 
 app.use("/api/assignments", assignmentsRoutes);
 app.use("/api/chat", chatRoutes);
@@ -46,6 +122,14 @@ app.use("/api/auth/google", googleAuthRoutes);
 app.use(express.static(path.join(__dirname, "public")));
 
 async function start() {
+    // Before anything else: a broken mapping would route participants into the
+    // wrong condition, which is worse than not starting at all.
+    const conditions = loadParticipantConditions();
+    console.log(
+        `Loaded condition mapping for ${getParticipantCount()} participants ` +
+            `across ${getMemoCount()} memos (${conditions.filePath})`
+    );
+
     await connectDB();
 
     // Fire and forget: don't hold up listen, but have Chrome ready before the

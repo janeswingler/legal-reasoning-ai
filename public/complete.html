@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <title>Assignment complete</title>
+        <link rel="stylesheet" href="./css/variables.css?v=20260725a" />
+        <link rel="stylesheet" href="./css/reset.css" />
+        <link rel="stylesheet" href="./css/enter.css?v=20260827a" />
+        <link rel="stylesheet" href="./css/screen-gate.css?v=20260812a" />
+    </head>
+    <body class="enter-page">
+        <div class="screen-gate" role="alert">
+            <div class="screen-gate__card">
+                <h1 class="screen-gate__title">This tool needs a larger screen</h1>
+                <p class="screen-gate__text">
+                    This tool is built for a laptop or desktop. Please reopen it
+                    in a browser window at least 900 pixels wide.
+                </p>
+                <p class="screen-gate__hint">
+                    Already on a laptop? Try maximizing the window, or reset the browser
+                    zoom with Command&#8211;0 (Mac) or Ctrl&#8211;0 (Windows).
+                </p>
+            </div>
+        </div>
+        <main class="enter" aria-labelledby="completeTitle">
+            <p class="enter__kicker">Course Number</p>
+            <h1 id="completeTitle" class="enter__title">Assignment complete</h1>
+            <p id="completeMemoTitle" class="enter__memo"></p>
+
+            <ol class="enter__steps">
+                <li class="enter__step is-done">
+                    <span class="enter__tick" aria-hidden="true">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                            <path
+                                d="M3 7.2l2.6 2.6L11 4.2"
+                                stroke="currentColor"
+                                stroke-width="1.75"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            />
+                        </svg>
+                    </span>
+                    <span>Writing submitted</span>
+                </li>
+                <li class="enter__step is-done">
+                    <span class="enter__tick" aria-hidden="true">
+                        <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                            <path
+                                d="M3 7.2l2.6 2.6L11 4.2"
+                                stroke="currentColor"
+                                stroke-width="1.75"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            />
+                        </svg>
+                    </span>
+                    <span>Post-task questionnaire</span>
+                </li>
+            </ol>
+
+            <p class="enter__note">
+                Both parts of this assignment are finished. Your writing is
+                submitted and can no longer be edited. There is nothing further
+                to do here.
+            </p>
+        </main>
+        <script src="./js/screen-gate.js?v=20260812a"></script>
+        <script src="./js/study-routing.js?v=20260831a"></script>
+        <script src="./js/complete.js?v=20260827a"></script>
+    </body>
+</html>

@@ -55,6 +55,46 @@ body.enter-page {
     margin-top: var(--space-5);
 }
 
+.enter__steps {
+    display: grid;
+    gap: var(--space-3);
+    margin: var(--space-5) 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.enter__step {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+}
+
+.enter__tick {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.35rem;
+    height: 1.35rem;
+    border: 1.5px solid currentColor;
+    border-radius: 50%;
+}
+
+.enter__step.is-done .enter__tick {
+    background: #1c1b19;
+    border-color: #1c1b19;
+    color: #fff;
+}
+
+.enter__note {
+    margin: var(--space-5) 0 0;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
+}
+
 .enter__label {
     display: block;
     margin-bottom: var(--space-2);

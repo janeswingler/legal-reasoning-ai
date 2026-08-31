@@ -78,6 +78,14 @@ async function ensureIdentityColumns(connection, database) {
     await ensureColumn(
         connection,
         database,
+        "assignments",
+        "questionnaire_completed_at",
+        "DATETIME(3) NULL AFTER submitted_at"
+    );
+
+    await ensureColumn(
+        connection,
+        database,
         "chat_attachments",
         "system_id",
         "VARCHAR(255) NULL AFTER assignment_id"

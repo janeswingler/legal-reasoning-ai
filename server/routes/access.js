@@ -1,59 +1,79 @@
 const express = require("express");
+const assignmentsDb = require("../db/assignments.js");
 const { setAccessCookie } = require("../middleware/accessGate.js");
+const { sanitizeId } = require("../services/studyIdentifiers.js");
+const { resolveMemoNumber, MEMO_COUNT } = require("../services/studyRouting.js");
 const {
-    resolveMemoNumber,
-    resolveSystemIdFromParity,
-} = require("../services/studyRouting.js");
+    hasParticipant,
+    getSystemId,
+} = require("../services/participantConditions.js");
+const {
+    findAssignmentState,
+    buildStateRedirect,
+} = require("../services/assignmentState.js");
 
 const router = express.Router();
 
-function sanitizeId(value, fieldName) {
-    const trimmed = String(value || "").trim();
-    if (!trimmed) {
-        throw new Error(`${fieldName} is required`);
-    }
-    if (trimmed.length > 255) {
-        throw new Error(`${fieldName} is too long`);
-    }
-    if (!/^[a-zA-Z0-9._-]+$/.test(trimmed)) {
-        throw new Error(`${fieldName} may only contain letters, numbers, dots, dashes, and underscores`);
-    }
-    return trimmed;
-}
+const UNKNOWN_PARTICIPANT_MESSAGE =
+    "That participant ID was not found. Please check it and enter it again.";
 
-router.post("/verify", (req, res) => {
+router.post("/verify", async (req, res) => {
     let participantID;
     let memoID;
     try {
         participantID = sanitizeId(req.body?.participantID, "Participant ID");
         memoID = sanitizeId(req.body?.memoID ?? req.body?.assignmentId, "Memo ID");
     } catch (error) {
-        return res.status(400).json({ error: error.message });
+        return res.status(400).json({ error: UNKNOWN_PARTICIPANT_MESSAGE });
     }
 
     const memoNumber = resolveMemoNumber(memoID);
     if (!memoNumber) {
-        return res.status(400).json({ error: "Memo ID must be a number from 1 to 6" });
+        return res.status(400).json({
+            error: `Memo ID must be a number from 1 to ${MEMO_COUNT}`,
+        });
     }
 
-    const systemID = resolveSystemIdFromParity(participantID, memoNumber);
+    // An id outside the mapping is a typo or someone who is not in the study.
+    // Either way there is no condition to assign, so they do not get in.
+    if (!hasParticipant(participantID)) {
+        return res.status(404).json({ error: UNKNOWN_PARTICIPANT_MESSAGE });
+    }
+
+    const systemID = getSystemId(participantID, memoNumber);
     if (!systemID) {
         return res.status(400).json({
-            error: "Participant ID must include a number, for example 33",
+            error: `Memo ${memoNumber} is not part of your assignment schedule.`,
         });
     }
 
     setAccessCookie(req, res);
 
-    const params = new URLSearchParams({
-        participantID,
-        memoID: String(memoNumber),
-        systemID,
-    });
+    // Where they go depends on how far through the assignment they already are,
+    // so returning after a submit does not drop them back into a locked editor.
+    let state;
+    try {
+        ({ state } = await findAssignmentState(
+            assignmentsDb,
+            participantID,
+            memoNumber
+        ));
+    } catch (error) {
+        console.error("Access verify state lookup failed:", error);
+        return res.status(500).json({
+            error: "Could not open your assignment. Try again in a moment.",
+        });
+    }
 
     return res.json({
         ok: true,
-        redirect: `/app.html?${params.toString()}`,
+        state,
+        redirect: buildStateRedirect({
+            state,
+            participantID,
+            memoNumber,
+            systemID,
+        }),
     });
 });
 

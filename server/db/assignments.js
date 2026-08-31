@@ -12,6 +12,7 @@ const ASSIGNMENT_KEYS = {
     version: "version",
     timestamp: "timestamp",
     submitted_at: "submittedAt",
+    questionnaire_completed_at: "questionnaireCompletedAt",
     drive_file_id: "driveFileId",
     drive_file_name: "driveFileName",
     local_file_path: "localFilePath",
@@ -63,8 +64,9 @@ async function create(data) {
         `INSERT INTO assignments (
             participant_id, session_id, system_id, assignment_id,
             title, content, version, timestamp,
-            submitted_at, drive_file_id, drive_file_name, local_file_path
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            submitted_at, questionnaire_completed_at,
+            drive_file_id, drive_file_name, local_file_path
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             data.participantID ?? null,
             data.sessionID ?? null,
@@ -75,6 +77,9 @@ async function create(data) {
             data.version ?? 1,
             data.timestamp ? new Date(data.timestamp) : new Date(),
             data.submittedAt ? new Date(data.submittedAt) : null,
+            data.questionnaireCompletedAt
+                ? new Date(data.questionnaireCompletedAt)
+                : null,
             data.driveFileId ?? null,
             data.driveFileName ?? null,
             data.localFilePath ?? null,
@@ -108,6 +113,7 @@ async function updateById(id, fields) {
             version = ?,
             timestamp = ?,
             submitted_at = ?,
+            questionnaire_completed_at = ?,
             drive_file_id = ?,
             drive_file_name = ?,
             local_file_path = ?
@@ -122,6 +128,9 @@ async function updateById(id, fields) {
             next.version,
             next.timestamp,
             next.submittedAt ? new Date(next.submittedAt) : null,
+            next.questionnaireCompletedAt
+                ? new Date(next.questionnaireCompletedAt)
+                : null,
             next.driveFileId ?? null,
             next.driveFileName ?? null,
             next.localFilePath ?? null,

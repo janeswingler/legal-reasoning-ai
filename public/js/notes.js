@@ -2,6 +2,9 @@ const noteToolbar = document.getElementById("noteToolbar");
 const exportPdfBtn = document.getElementById("exportPdfBtn");
 const submitMemoBtn = document.getElementById("submitMemoBtn");
 const memoSubmitStatus = document.getElementById("memoSubmitStatus");
+const submitConfirmOverlay = document.getElementById("submitConfirmOverlay");
+const submitConfirmCancel = document.getElementById("submitConfirmCancel");
+const submitConfirmAccept = document.getElementById("submitConfirmAccept");
 const submitCompleteOverlay = document.getElementById("submitCompleteOverlay");
 const submitCompleteBack = document.getElementById("submitCompleteBack");
 const submitCompleteContinue = document.getElementById("submitCompleteContinue");
@@ -20,6 +23,9 @@ let pleadingEditor = null;
 let saveTimer = null;
 let isInitializing = true;
 let cachedPdf = null;
+// Mirrors assignments.submitted_at / questionnaire_completed_at on the server,
+// which is the only durable record of how far through the assignment they are.
+let assignmentState = "writing";
 let lastPointer = {
     x: Math.round(window.innerWidth / 2),
     y: Math.round(window.innerHeight / 2),
@@ -187,6 +193,10 @@ function getNoteTitle() {
 }
 
 async function saveCurrentNote() {
+    if (isWritingLocked()) {
+        return;
+    }
+
     const payload = {
         participantID: config.participantID,
         // The API and the assignment_id database column still use the old
@@ -204,6 +214,14 @@ async function saveCurrentNote() {
         body: JSON.stringify(payload),
     });
 
+    if (response.status === 409) {
+        // Submitted elsewhere while this tab was open. Stop trying to save.
+        const result = await response.json().catch(() => ({}));
+        applyAssignmentState(result.state || "questionnaire");
+        setSaveStatus("Submitted");
+        return;
+    }
+
     if (!response.ok) {
         setSaveStatus("Save failed");
         return;
@@ -214,7 +232,7 @@ async function saveCurrentNote() {
 }
 
 function scheduleSave() {
-    if (isInitializing) return;
+    if (isInitializing || isWritingLocked()) return;
     // Catches changes with no keystroke behind them: pastes, toolbar
     // formatting, and list operations.
     window.markEditorDirty?.();
@@ -253,38 +271,71 @@ function getSafeExportBasename() {
     return title.replace(/[^\w\- ]/g, "").trim() || "memo";
 }
 
-function submitCompleteStorageKey() {
-    return `lrai_submitComplete_${config.participantID}_${config.memoId}`;
+const SUBMIT_STATUS_TEXT = {
+    writing: "Not submitted",
+    questionnaire: "Submitted",
+    complete: "Complete",
+};
+
+function isWritingLocked() {
+    return assignmentState !== "writing";
 }
 
-function hasFinishedMemo() {
-    try {
-        return localStorage.getItem(submitCompleteStorageKey()) === "1";
-    } catch (error) {
-        return false;
-    }
-}
+/**
+ * Makes the writing permanently read-only.
+ *
+ * The server refuses edits once submitted_at is set; this keeps the interface
+ * honest so nobody types into a draft that can no longer be saved.
+ */
+function lockWriting() {
+    clearTimeout(saveTimer);
 
-function markMemoFinished() {
-    try {
-        localStorage.setItem(submitCompleteStorageKey(), "1");
-    } catch (error) {
-        // Status still updates for this sitting.
-    }
-}
+    noteEditorEl?.setAttribute("contenteditable", "false");
+    document.body.classList.add("is-writing-locked");
 
-function updateSubmitButtonState() {
-    const submitted = hasFinishedMemo();
-
-    if (memoSubmitStatus) {
-        memoSubmitStatus.textContent = submitted ? "Submitted" : "Not submitted";
-        memoSubmitStatus.parentElement?.classList.toggle("is-submitted", submitted);
-    }
+    noteToolbar?.querySelectorAll("button").forEach((button) => {
+        button.disabled = true;
+    });
 
     if (submitMemoBtn) {
-        submitMemoBtn.textContent = "Submit";
-        submitMemoBtn.title = "Submit memo";
+        submitMemoBtn.disabled = true;
     }
+}
+
+function applyAssignmentState(state) {
+    assignmentState = SUBMIT_STATUS_TEXT[state] ? state : "writing";
+
+    if (memoSubmitStatus) {
+        memoSubmitStatus.textContent = SUBMIT_STATUS_TEXT[assignmentState];
+        memoSubmitStatus.parentElement?.classList.toggle(
+            "is-submitted",
+            isWritingLocked()
+        );
+    }
+
+    if (isWritingLocked()) {
+        lockWriting();
+    }
+}
+
+function openSubmitConfirm() {
+    if (!submitConfirmOverlay) {
+        return;
+    }
+
+    submitConfirmOverlay.hidden = false;
+    document.body.classList.add("is-submit-complete");
+    submitConfirmAccept?.focus();
+}
+
+function closeSubmitConfirm() {
+    if (!submitConfirmOverlay) {
+        return;
+    }
+
+    submitConfirmOverlay.hidden = true;
+    document.body.classList.remove("is-submit-complete");
+    submitMemoBtn?.focus();
 }
 
 function openSubmitComplete() {
@@ -304,19 +355,18 @@ function closeSubmitComplete() {
 
     submitCompleteOverlay.hidden = true;
     document.body.classList.remove("is-submit-complete");
-    submitMemoBtn?.focus();
 }
 
 function continueToQuestionnaire() {
-    markMemoFinished();
-    updateSubmitButtonState();
     logEvent({
         eventType: "qualtrics_continue",
         elementName: "Continue to Questionnaire",
         page: "assignment",
         eventProps: { memoId: config.memoId },
     });
-    window.location.assign(config.qualtricsUrl);
+    // The server owns the Qualtrics address and stamps the completion when the
+    // survey redirects back.
+    window.location.assign(config.questionnaireUrl);
 }
 
 /**
@@ -334,8 +384,32 @@ function recordQuietly(record) {
     }
 }
 
+/**
+ * Asks before anything is sent. Submission is the point of no return, so the
+ * confirmation has to come first rather than after the upload.
+ */
+function requestSubmit() {
+    if (!pleadingEditor || isWritingLocked() || submitMemoBtn?.disabled) {
+        return;
+    }
+
+    if (!getPlainText()) {
+        alert("Your memo is empty. Add text before submitting.");
+        return;
+    }
+
+    logEvent({
+        eventType: "submit_confirm_open",
+        elementName: "Submit Memo",
+        page: "assignment",
+        eventProps: { memoId: config.memoId },
+    });
+
+    openSubmitConfirm();
+}
+
 async function submitMemo() {
-    if (!pleadingEditor || submitMemoBtn?.disabled) {
+    if (!pleadingEditor || isWritingLocked()) {
         return;
     }
 
@@ -386,6 +460,14 @@ async function submitMemo() {
 
         const result = await response.json().catch(() => ({}));
 
+        // Already submitted in another tab or sitting: show them where they
+        // actually are rather than an error about a memo that did go in.
+        if (response.status === 409) {
+            applyAssignmentState(result.state || "questionnaire");
+            openSubmitComplete();
+            return;
+        }
+
         if (!response.ok) {
             throw new Error(result.error || "Submission failed");
         }
@@ -394,12 +476,16 @@ async function submitMemo() {
             console.warn(result.warning);
         }
 
+        applyAssignmentState(result.state || "questionnaire");
         openSubmitComplete();
     } catch (error) {
         console.error("Submission error:", error);
         alert(error.message || "Could not submit memo. Please try again.");
+        // Only reopen the editor if the writing is genuinely still unlocked.
+        if (!isWritingLocked()) {
+            submitMemoBtn.disabled = false;
+        }
     } finally {
-        submitMemoBtn.disabled = false;
         setExportPdfDisabled(false);
         endNotesBusy();
     }
@@ -534,13 +620,28 @@ function bindToolbar() {
 
     submitMemoBtn.addEventListener("click", (event) => {
         event.preventDefault();
+        requestSubmit();
+    });
+
+    submitConfirmCancel?.addEventListener("click", () => {
+        logEvent({
+            eventType: "submit_confirm_cancel",
+            elementName: "Keep Editing",
+            page: "assignment",
+            eventProps: { memoId: config.memoId },
+        });
+        closeSubmitConfirm();
+    });
+
+    submitConfirmAccept?.addEventListener("click", () => {
+        closeSubmitConfirm();
         submitMemo().catch(reportUnexpected("Submission"));
     });
 
     submitCompleteBack?.addEventListener("click", () => {
         logEvent({
             eventType: "qualtrics_defer",
-            elementName: "Back to Editing",
+            elementName: "Questionnaire Later",
             page: "assignment",
             eventProps: { memoId: config.memoId },
         });
@@ -551,12 +652,14 @@ function bindToolbar() {
         continueToQuestionnaire();
     });
 
+    // Escape backs out of the pre-submit question only. The post-submit screen
+    // has its own two choices and nothing behind it to return to.
     document.addEventListener("keydown", (event) => {
-        if (event.key !== "Escape" || submitCompleteOverlay?.hidden) {
+        if (event.key !== "Escape" || submitConfirmOverlay?.hidden) {
             return;
         }
         event.preventDefault();
-        closeSubmitComplete();
+        closeSubmitConfirm();
     });
 }
 
@@ -592,7 +695,7 @@ async function initNote() {
             const note = await response.json();
             setEditorHtml(parseNoteContent(note.content || ""));
             invalidatePdfCache();
-            updateSubmitButtonState();
+            applyAssignmentState(note.state || "writing");
             setSaveStatus("Loaded");
             return;
         }

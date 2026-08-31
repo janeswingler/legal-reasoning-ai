@@ -11,7 +11,10 @@ CREATE TABLE IF NOT EXISTS assignments (
   content LONGTEXT NULL,
   version INT NOT NULL DEFAULT 1,
   timestamp DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  -- The two states the study cares about. submitted_at locks the writing;
+  -- questionnaire_completed_at is stamped by the Qualtrics return redirect.
   submitted_at DATETIME(3) NULL,
+  questionnaire_completed_at DATETIME(3) NULL,
   drive_file_id VARCHAR(255) NULL,
   drive_file_name VARCHAR(512) NULL,
   local_file_path VARCHAR(1024) NULL,

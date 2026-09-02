@@ -13,8 +13,15 @@ const {
     saveSubmissionLocally,
 } = require("../services/submissionStorage.js");
 const { renderPleadingPdf } = require("../services/pdfGenerator.js");
+const {
+    ASSIGNMENT_STATES,
+    resolveAssignmentState,
+} = require("../services/assignmentState.js");
 
 const router = express.Router();
+
+const WRITING_LOCKED_MESSAGE =
+    "This memo has been submitted and can no longer be edited.";
 
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -87,7 +94,7 @@ router.get("/current", async (req, res) => {
             return res.status(404).json({ error: "Assignment not found" });
         }
 
-        res.json(assignment);
+        res.json({ ...assignment, state: resolveAssignmentState(assignment) });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
@@ -128,6 +135,20 @@ router.put("/current", async (req, res) => {
         if (!participantID || !assignmentId) {
             return res.status(400).json({
                 error: "participantID and assignmentId required",
+            });
+        }
+
+        // The editor also goes read-only on submit, but autosave is the one
+        // caller that could still be in flight, so the lock is enforced here.
+        const existing = await assignmentsDb.findByParticipantAndAssignment(
+            participantID,
+            assignmentId
+        );
+
+        if (existing?.submittedAt) {
+            return res.status(409).json({
+                error: WRITING_LOCKED_MESSAGE,
+                state: resolveAssignmentState(existing),
             });
         }
 
@@ -206,6 +227,15 @@ router.post("/submit", (req, res) => {
                 assignmentId
             );
 
+            // Submission is one-way: a second submit would replace the stored
+            // PDF after the participant was told their writing was final.
+            if (assignment?.submittedAt) {
+                return res.status(409).json({
+                    error: WRITING_LOCKED_MESSAGE,
+                    state: resolveAssignmentState(assignment),
+                });
+            }
+
             if (!assignment) {
                 assignment = await assignmentsDb.create({
                     participantID,
@@ -250,6 +280,7 @@ router.post("/submit", (req, res) => {
                         return res.json({
                             ok: true,
                             submittedAt: assignment.submittedAt,
+                            state: resolveAssignmentState(assignment),
                             storage: "local",
                             localFilePath: assignment.localFilePath,
                             warning: formatDriveSubmissionError(driveError),
@@ -282,6 +313,7 @@ router.post("/submit", (req, res) => {
             res.json({
                 ok: true,
                 submittedAt: assignment.submittedAt,
+                state: resolveAssignmentState(assignment),
                 storage: driveResult ? "drive" : "local",
                 driveFileId: assignment.driveFileId,
                 driveFileName: assignment.driveFileName,
@@ -302,6 +334,10 @@ router.put("/:id", async (req, res) => {
         const existing = await assignmentsDb.findById(req.params.id);
         if (!existing) {
             return res.status(404).json({ error: "Assignment not found" });
+        }
+
+        if (existing.submittedAt) {
+            return res.status(409).json({ error: WRITING_LOCKED_MESSAGE });
         }
 
         const { title, content } = req.body;

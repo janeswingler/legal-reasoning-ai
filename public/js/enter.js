@@ -2,6 +2,7 @@ const form = document.getElementById("enterForm");
 const errorEl = document.getElementById("enterError");
 const submitBtn = document.getElementById("enterSubmitBtn");
 const memoTitleEl = document.getElementById("enterMemoTitle");
+const participantInput = document.getElementById("participantID");
 
 const memoNumber = resolveMemoNumber(
     new URLSearchParams(window.location.search).get("memoID")
@@ -12,13 +13,11 @@ function showError(message) {
     errorEl.hidden = !message;
 }
 
-function buildAppUrl({ participantID, memoID, systemID }) {
-    const params = new URLSearchParams({
-        participantID,
-        memoID,
-        systemID,
-    });
-    return `/app.html?${params.toString()}`;
+/** Leaves them ready to try again rather than stranded on a dead end. */
+function promptRetry(message) {
+    showError(message);
+    participantInput.select();
+    participantInput.focus();
 }
 
 if (memoNumber) {
@@ -45,16 +44,9 @@ form.addEventListener("submit", async (event) => {
     const participantID = form.participantID.value.trim();
 
     if (!participantID) {
-        showError("Please enter your participant ID.");
+        promptRetry("Please enter your participant ID.");
         return;
     }
-
-    if (resolveParticipantNumber(participantID) === null) {
-        showError("Participant ID must include a number, for example 33.");
-        return;
-    }
-
-    const systemID = resolveSystemIdFromParity(participantID, memoNumber);
 
     submitBtn.disabled = true;
     submitBtn.textContent = "Checking…";
@@ -72,18 +64,16 @@ form.addEventListener("submit", async (event) => {
         const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-            showError(data.error || "Could not continue. Check your participant ID and try again.");
+            // The condition mapping lives on the server, so it is the only
+            // thing that can say whether this ID is in the study.
+            promptRetry(
+                data.error ||
+                    "Could not continue. Check your participant ID and try again."
+            );
             return;
         }
 
-        window.location.assign(
-            data.redirect ||
-                buildAppUrl({
-                    participantID,
-                    memoID: String(memoNumber),
-                    systemID,
-                })
-        );
+        window.location.assign(data.redirect);
     } catch {
         showError("Could not reach the server. Try again in a moment.");
     } finally {

@@ -86,6 +86,17 @@ body.system-2 .panel-notes__memo {
   color: var(--text);
 }
 
+/* Submitted writing is read-only for good, so the controls that would change
+   it read as unavailable rather than merely inactive. */
+body.is-writing-locked .note-format-toolbar {
+  opacity: 0.55;
+  pointer-events: none;
+}
+
+body.is-writing-locked .pleading-editor {
+  cursor: default;
+}
+
 .note-format-toolbar {
   display: flex;
   flex-wrap: wrap;

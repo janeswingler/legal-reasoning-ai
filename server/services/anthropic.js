@@ -2,6 +2,7 @@ const Anthropic = require("@anthropic-ai/sdk");
 
 const MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5";
 const TITLE_MODEL = process.env.ANTHROPIC_TITLE_MODEL || "claude-haiku-4-5";
+const CHAT_MAX_TOKENS = Number(process.env.ANTHROPIC_MAX_TOKENS || 16384);
 
 let client = null;
 
@@ -88,14 +89,24 @@ async function getChatCompletion(
     const response = await anthropic.messages.create(
         {
             model: MODEL,
-            max_tokens: 4096,
+            max_tokens: CHAT_MAX_TOKENS,
             system: buildSystemPrompt(assignmentId, Boolean(retrievedContext)),
             messages,
         },
         signal ? { signal } : undefined
     );
 
-    return extractText(response);
+    const text = extractText(response);
+    const stopReason = response.stop_reason || null;
+
+    // Visible text can end mid-sentence when thinking tokens eat the budget.
+    if (stopReason === "max_tokens") {
+        console.warn(
+            `Chat completion hit max_tokens (${CHAT_MAX_TOKENS}); reply may be truncated`
+        );
+    }
+
+    return { text, stopReason };
 }
 
 async function generateSessionTitle(userInput, botResponse) {

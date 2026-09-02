@@ -39,9 +39,10 @@ const memoNumber =
 
 const memoId = toMemoId(memoNumber);
 
-// Same parity → system 1 (no AI). Different parity → system 2 (AI).
-// URL systemID is ignored so a student cannot switch conditions.
-const systemID = resolveSystemIdFromParity(participantID, memoNumber) || "1";
+// The server looks the condition up in the study mapping and rewrites the URL
+// before this page is served, so the parameter is already checked by the time
+// it is read here. A student editing it is redirected back to their own value.
+const systemID = readParam("systemID") === "2" ? "2" : "1";
 const isAiEnabled = systemID === "2";
 
 let sessionID = sessionStorage.getItem(SESSION_STORAGE_KEY);
@@ -63,8 +64,11 @@ const config = {
     isAiEnabled,
     isNewSession,
     memoTitle: `Memo ${memoNumber}`,
-    // Placeholder until the study Qualtrics survey is ready.
-    qualtricsUrl: "https://myusf.usfca.edu/ets/educational-technologies/qualtrics",
+    // The server holds the Qualtrics address and records the return trip, so
+    // the client only ever needs its own entry point.
+    questionnaireUrl:
+        `/questionnaire/start?participantID=${encodeURIComponent(participantID)}` +
+        `&memoID=${encodeURIComponent(String(memoNumber))}`,
 };
 
 document.body.classList.remove("system-1", "system-2");

@@ -9,7 +9,7 @@
         <link rel="stylesheet" href="./css/reset.css" />
         <link rel="stylesheet" href="./css/layout.css?v=20260821d" />
         <link rel="stylesheet" href="./css/chat.css?v=20260821a" />
-        <link rel="stylesheet" href="./css/notes.css?v=20260821g" />
+        <link rel="stylesheet" href="./css/notes.css?v=20260827a" />
         <link rel="stylesheet" href="./css/screen-gate.css?v=20260812a" />
 
     </head>
@@ -28,19 +28,13 @@
             </div>
         </div>
         <script>
+            // Ahead of the stylesheets so the chat pane never flashes into view
+            // for a system 1 participant. The server has already validated this
+            // parameter against the study condition mapping.
             (function () {
-                var params = new URLSearchParams(location.search);
-                var participantMatch = String(params.get("participantID") || "").match(/\d+/);
-                var memoMatch = String(params.get("memoID") || params.get("assignment") || "").match(/\d+/);
-                var participantNumber = participantMatch ? parseInt(participantMatch[0], 10) : null;
-                var memoNumber = memoMatch ? parseInt(memoMatch[0], 10) : null;
-                var systemID = "1";
-                if (participantNumber !== null && memoNumber !== null) {
-                    systemID =
-                        participantNumber % 2 === memoNumber % 2 ? "1" : "2";
-                }
+                var systemID = new URLSearchParams(location.search).get("systemID");
                 document.body.classList.add(
-                    systemID === "1" ? "system-1" : "system-2"
+                    systemID === "2" ? "system-2" : "system-1"
                 );
             })();
         </script>
@@ -331,6 +325,42 @@
             <span id="noteBusyStatusText" class="note-busy-cursor-note__text"></span>
         </p>
         <div
+            id="submitConfirmOverlay"
+            class="submit-complete"
+            hidden
+        >
+            <div
+                class="submit-complete__card"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="submitConfirmTitle"
+                aria-describedby="submitConfirmCopy"
+            >
+                <h2 id="submitConfirmTitle" class="submit-complete__title">
+                    Are you sure you are done editing?
+                </h2>
+                <div id="submitConfirmCopy">
+                    <p class="submit-complete__copy">
+                        Once you submit, you will not be able to make further
+                        changes to your writing.
+                    </p>
+                    <p class="submit-complete__copy">
+                        The post-task questionnaire is also required to complete
+                        this assignment. You can complete it now or return later
+                        using the same assignment link.
+                    </p>
+                </div>
+                <div class="submit-complete__actions">
+                    <button type="button" class="submit-complete__back" id="submitConfirmCancel">
+                        No, keep editing
+                    </button>
+                    <button type="button" class="submit-complete__continue" id="submitConfirmAccept">
+                        Yes, submit my writing
+                    </button>
+                </div>
+            </div>
+        </div>
+        <div
             id="submitCompleteOverlay"
             class="submit-complete"
             hidden
@@ -366,15 +396,16 @@
                     </li>
                     </ol>
                 <p id="submitCompleteCopy" class="submit-complete__copy">
-                    Are you sure you are done editing? If yes, continue to the
-                    post-task questionnaire. If not, you can return to the editor.
+                    Your writing is now locked. The post-task questionnaire is
+                    required to complete this assignment. You can complete it now
+                    or return later using the same assignment link.
                 </p>
                 <div class="submit-complete__actions">
                     <button type="button" class="submit-complete__back" id="submitCompleteBack">
-                        No, back to editing
+                        I'll do it later
                     </button>
                     <button type="button" class="submit-complete__continue" id="submitCompleteContinue">
-                        Yes, continue to questionnaire
+                        Continue to questionnaire
                     </button>
                 </div>
             </div>
@@ -390,12 +421,12 @@
         <script src="./js/pleading/document.js?v=20260711b"></script>
         <script src="./js/pleading/export-pdf.js?v=20260731a"></script>
         <script src="./js/pleading-editor/editor.js?v=20260812d"></script>
-        <script src="./js/study-routing.js?v=20260821a"></script>
-        <script src="./js/config.js?v=20260821c"></script>
+        <script src="./js/study-routing.js?v=20260831a"></script>
+        <script src="./js/config.js?v=20260831a"></script>
         <script src="./js/logging.js?v=20260821a"></script>
         <script src="./js/split-pane.js?v=20260821a"></script>
         <script src="./js/chat.js?v=20260821b"></script>
-        <script src="./js/notes.js?v=20260821g"></script>
+        <script src="./js/notes.js?v=20260827a"></script>
         <!-- Last: attaches to the editor and chat once both exist. -->
         <script src="./js/instrumentation.js?v=20260812t"></script>
     </body>

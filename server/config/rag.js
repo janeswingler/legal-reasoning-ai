@@ -1,5 +1,5 @@
 module.exports = {
-    EMBEDDING_MODEL: process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small",
+    EMBEDDING_MODEL: process.env.VOYAGE_EMBEDDING_MODEL || "voyage-4",
     RETRIEVE_CANDIDATES: 20,
     TOP_K: 5,
     FALLBACK_LIMIT: 15,

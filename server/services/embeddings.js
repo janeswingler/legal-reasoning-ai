@@ -1,38 +1,53 @@
-const OpenAI = require("openai");
+const EMBEDDING_MODEL = process.env.VOYAGE_EMBEDDING_MODEL || "voyage-4";
+const VOYAGE_URL = "https://api.voyageai.com/v1/embeddings";
 
-const EMBEDDING_MODEL =
-    process.env.OPENAI_EMBEDDING_MODEL || "text-embedding-3-small";
-
-let client = null;
-
-function getClient() {
-    if (!process.env.OPENAI_API_KEY) {
-        throw new Error("OPENAI_API_KEY is not configured");
+function getApiKey() {
+    const key = String(process.env.VOYAGE_API_KEY || "").trim();
+    if (!key) {
+        throw new Error("VOYAGE_API_KEY is not configured");
     }
-    if (!client) {
-        client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-    }
-    return client;
+    return key;
 }
 
-async function embedTexts(texts) {
+async function embed(texts, inputType) {
     if (!texts.length) {
         return [];
     }
 
-    const openai = getClient();
-    const response = await openai.embeddings.create({
-        model: EMBEDDING_MODEL,
-        input: texts,
+    const response = await fetch(VOYAGE_URL, {
+        method: "POST",
+        headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${getApiKey()}`,
+        },
+        body: JSON.stringify({
+            input: texts,
+            model: EMBEDDING_MODEL,
+            input_type: inputType,
+        }),
     });
 
-    return response.data
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+        const detail =
+            result.detail ||
+            result.error?.message ||
+            result.error ||
+            "Voyage embedding failed";
+        throw new Error(detail);
+    }
+
+    return (result.data || [])
         .sort((left, right) => left.index - right.index)
         .map((item) => item.embedding);
 }
 
+async function embedTexts(texts) {
+    return embed(texts, "document");
+}
+
 async function embedQuery(text) {
-    const [embedding] = await embedTexts([text]);
+    const [embedding] = await embed([text], "query");
     return embedding || null;
 }
 

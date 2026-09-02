@@ -215,9 +215,9 @@ router.post("/", async (req, res) => {
         };
         req.on("close", onClientClose);
 
-        let botResponse;
+        let completion;
         try {
-            botResponse = await getChatCompletion(
+            completion = await getChatCompletion(
                 priorExchanges,
                 assignmentId,
                 userInput.trim(),
@@ -235,12 +235,13 @@ router.post("/", async (req, res) => {
             if (error.message === "ANTHROPIC_API_KEY is not configured") {
                 return res.status(503).json({ error: "Chat service is not configured" });
             }
-            console.error("OpenAI chat error:", error);
+            console.error("Chat completion error:", error);
             return res.status(502).json({ error: "Could not generate a response" });
         } finally {
             req.removeListener("close", onClientClose);
         }
 
+        const botResponse = completion?.text;
         if (!botResponse) {
             return res.status(502).json({ error: "Could not generate a response" });
         }
@@ -261,6 +262,7 @@ router.post("/", async (req, res) => {
                 ragVersion: retrievalResult.ragVersion,
                 chunkCount: retrievalResult.chunks.length,
                 scores: retrievalResult.scores,
+                stopReason: completion.stopReason,
             },
         });
 

@@ -4,6 +4,7 @@ const { setAccessCookie } = require("../middleware/accessGate.js");
 const { sanitizeId } = require("../services/studyIdentifiers.js");
 const { resolveMemoNumber, MEMO_COUNT } = require("../services/studyRouting.js");
 const { getSystemId } = require("../services/participantConditions.js");
+const { getQualtricsUrlForMemo } = require("../services/qualtricsUrls.js");
 const {
     ASSIGNMENT_STATES,
     findAssignmentState,
@@ -16,8 +17,16 @@ const router = express.Router();
 const DEFAULT_QUALTRICS_URL =
     "https://myusf.usfca.edu/ets/educational-technologies/qualtrics";
 
-function getQualtricsUrl() {
-    return process.env.QUALTRICS_URL || DEFAULT_QUALTRICS_URL;
+/**
+ * Each memo can have its own survey, looked up from server/data/qualtrics-urls.json.
+ * QUALTRICS_URL is the fallback for a memo missing from that file.
+ */
+function getQualtricsUrl(memoNumber) {
+    return (
+        getQualtricsUrlForMemo(memoNumber) ||
+        process.env.QUALTRICS_URL ||
+        DEFAULT_QUALTRICS_URL
+    );
 }
 
 /**
@@ -42,8 +51,9 @@ function editorUrlFor(participantID, memoNumber) {
 }
 
 /**
- * Sends the participant to Qualtrics, passing their ids so the survey can hold
- * them as embedded data and hand them back on the return redirect.
+ * Sends the participant to Qualtrics, passing participantID, memoID, and
+ * systemID so the survey can store them as embedded data. The return redirect
+ * only needs participantID and memoID to stamp completion.
  */
 router.get("/start", async (req, res) => {
     let identity;
@@ -78,9 +88,13 @@ router.get("/start", async (req, res) => {
         return res.redirect(302, editorUrlFor(participantID, memoNumber));
     }
 
-    const target = new URL(getQualtricsUrl());
+    const target = new URL(getQualtricsUrl(memoNumber));
     target.searchParams.set("participantID", participantID);
     target.searchParams.set("memoID", String(memoNumber));
+    target.searchParams.set(
+        "systemID",
+        getSystemId(participantID, memoNumber) || "1"
+    );
 
     return res.redirect(302, target.toString());
 });

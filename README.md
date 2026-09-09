@@ -3,7 +3,7 @@ Research prototype for a University of San Francisco study. Law students use an 
 
 ## Tech stack
 - **Backend:** Node.js, Express.js
-- **Database:** MongoDB with Mongoose
+- **Database:** MariaDB / MySQL (raw SQL via `mysql2`; schema in `server/sql/`)
 - **Frontend:** HTML, CSS, JavaScript
 - **AI:** Anthropic Claude API
 - **Deployment:** TBD
@@ -19,7 +19,7 @@ legal-reasoning-ai/
 │   └── assets/
 ├── server/
 │   ├── config/
-│   ├── models/
+│   ├── db/
 │   ├── routes/
 │   ├── services/
 │   └── middleware/

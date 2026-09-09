@@ -3,12 +3,6 @@ const STORAGE_KEYS = {
     memoId: "lrai_memoId",
 };
 
-// One study session = one sitting. sessionStorage is scoped to the tab and is
-// cleared when the tab closes, so a browser restart starts a new session while
-// a reload keeps the current one. A localStorage id would never change and
-// would make "closed the system and came back later" impossible to see.
-const SESSION_STORAGE_KEY = "lrai_studySessionId";
-
 const params = new URLSearchParams(window.location.search);
 
 function readParam(name) {
@@ -45,11 +39,19 @@ const memoId = toMemoId(memoNumber);
 const systemID = readParam("systemID") === "2" ? "2" : "1";
 const isAiEnabled = systemID === "2";
 
-let sessionID = sessionStorage.getItem(SESSION_STORAGE_KEY);
-const isNewSession = !sessionID;
+// One study session = one sitting at one memo. sessionStorage is scoped to the
+// tab and cleared when it closes, so a browser restart starts a new session
+// while a reload keeps the current one. A localStorage id would never change
+// and would make "closed the system and came back later" impossible to see.
+// The memo is part of the key so a tab reused for a later memo starts a fresh
+// sitting instead of extending the old one under the wrong memo.
+const SESSION_STORAGE_KEY = `lrai_studySessionId:${memoId}`;
+
+let studySessionId = sessionStorage.getItem(SESSION_STORAGE_KEY);
+const isNewSession = !studySessionId;
 if (isNewSession) {
-    sessionID = createSessionId();
-    sessionStorage.setItem(SESSION_STORAGE_KEY, sessionID);
+    studySessionId = createSessionId();
+    sessionStorage.setItem(SESSION_STORAGE_KEY, studySessionId);
 }
 
 localStorage.setItem(STORAGE_KEYS.participantID, participantID);
@@ -59,7 +61,7 @@ const config = {
     participantID,
     memoNumber,
     memoId,
-    sessionID,
+    studySessionId,
     systemID,
     isAiEnabled,
     isNewSession,

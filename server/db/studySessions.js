@@ -1,7 +1,7 @@
 const { query } = require("../config/db.js");
 const { mapKeys } = require("./helpers.js");
 
-const SESSION_KEYS = {
+const STUDY_SESSION_KEYS = {
     id: "id",
     participant_id: "participantID",
     assignment_id: "assignmentId",
@@ -40,7 +40,7 @@ function mapSession(row) {
     if (!row) {
         return null;
     }
-    const mapped = mapKeys(row, SESSION_KEYS);
+    const mapped = mapKeys(row, STUDY_SESSION_KEYS);
     // mapKeys assumes a numeric auto-increment id; this table is keyed by a
     // client-generated UUID, so restore the string form.
     mapped.id = row.id;
@@ -51,6 +51,11 @@ function mapSession(row) {
 /**
  * Open a sitting. The client generates the id, so a reload that re-sends the
  * same id must not create a second row or reset started_at.
+ *
+ * A reload also fires the close beacon first, so the row may already carry an
+ * ended_at from the page that just went away. Clearing it here is what keeps
+ * the sitting open across reloads and back-forward-cache restores; without it
+ * every second of the sitting after the first reload is lost.
  */
 async function start(data) {
     const startedAt = new Date();
@@ -68,9 +73,12 @@ async function start(data) {
             user_agent, screen_w, screen_h, viewport_w, viewport_h,
             tz_offset_min, clock_skew_ms
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE last_seen_at = VALUES(last_seen_at)`,
+         ON DUPLICATE KEY UPDATE
+            last_seen_at = VALUES(last_seen_at),
+            ended_at = NULL,
+            end_reason = NULL`,
         [
-            data.sessionID,
+            data.studySessionId,
             data.participantID ?? null,
             data.assignmentId ?? null,
             data.systemID ?? null,
@@ -89,37 +97,40 @@ async function start(data) {
 
     const rows = await query(
         `SELECT * FROM study_sessions WHERE id = ? LIMIT 1`,
-        [data.sessionID]
+        [data.studySessionId]
     );
     return { session: mapSession(rows[0] || null), serverNow: startedAt };
 }
 
-async function touch(sessionID, seenAt = new Date()) {
-    if (!sessionID) {
-        return;
+/** Returns true when the session row exists (and so could be touched). */
+async function touch(studySessionId, seenAt = new Date()) {
+    if (!studySessionId) {
+        return false;
     }
-    await query(
+    const result = await query(
         `UPDATE study_sessions
-         SET last_seen_at = ?
-         WHERE id = ? AND (last_seen_at IS NULL OR last_seen_at < ?)`,
-        [seenAt, sessionID, seenAt]
+         SET last_seen_at = GREATEST(COALESCE(last_seen_at, ?), ?)
+         WHERE id = ?`,
+        [seenAt, seenAt, studySessionId]
     );
+    return result.affectedRows > 0;
 }
 
 /**
  * Close a sitting. Only the first end wins: a pagehide beacon followed by a
- * late-arriving event should not overwrite the real reason.
+ * late-arriving event should not overwrite the real reason. Server time is
+ * used so open_seconds never mixes the client's clock with started_at.
  */
-async function end(sessionID, { endedAt, reason } = {}) {
-    if (!sessionID) {
+async function end(studySessionId, { reason } = {}) {
+    if (!studySessionId) {
         return;
     }
-    const closedAt = toDate(endedAt) || new Date();
+    const closedAt = new Date();
     await query(
         `UPDATE study_sessions
          SET ended_at = ?, end_reason = ?, last_seen_at = GREATEST(COALESCE(last_seen_at, ?), ?)
          WHERE id = ? AND ended_at IS NULL`,
-        [closedAt, reason || "unknown", closedAt, closedAt, sessionID]
+        [closedAt, reason || "unknown", closedAt, closedAt, studySessionId]
     );
 }
 

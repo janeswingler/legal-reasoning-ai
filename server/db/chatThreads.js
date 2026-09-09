@@ -1,29 +1,29 @@
 const { query } = require("../config/db.js");
 const { isValidId, toId, mapKeys } = require("./helpers.js");
 
-const SESSION_KEYS = {
+const CHAT_THREAD_KEYS = {
     id: "id",
     participant_id: "participantID",
     assignment_id: "assignmentId",
-    session_id: "sessionID",
+    study_session_id: "studySessionId",
     system_id: "systemID",
     title: "title",
     created_at: "createdAt",
     updated_at: "updatedAt",
 };
 
-function mapSession(row) {
-    return mapKeys(row, SESSION_KEYS);
+function mapThread(row) {
+    return mapKeys(row, CHAT_THREAD_KEYS);
 }
 
 async function findByParticipantAndAssignment(participantID, assignmentId) {
     const rows = await query(
-        `SELECT * FROM chat_sessions
+        `SELECT * FROM chat_threads
          WHERE participant_id = ? AND assignment_id = ?
          ORDER BY updated_at DESC`,
         [participantID, assignmentId]
     );
-    return rows.map(mapSession);
+    return rows.map(mapThread);
 }
 
 async function findOwned(id, participantID, assignmentId) {
@@ -31,12 +31,12 @@ async function findOwned(id, participantID, assignmentId) {
         return null;
     }
     const rows = await query(
-        `SELECT * FROM chat_sessions
+        `SELECT * FROM chat_threads
          WHERE id = ? AND participant_id = ? AND assignment_id = ?
          LIMIT 1`,
         [toId(id), participantID, assignmentId]
     );
-    return mapSession(rows[0] || null);
+    return mapThread(rows[0] || null);
 }
 
 async function findById(id) {
@@ -44,21 +44,21 @@ async function findById(id) {
         return null;
     }
     const rows = await query(
-        `SELECT * FROM chat_sessions WHERE id = ? LIMIT 1`,
+        `SELECT * FROM chat_threads WHERE id = ? LIMIT 1`,
         [toId(id)]
     );
-    return mapSession(rows[0] || null);
+    return mapThread(rows[0] || null);
 }
 
 async function create(data) {
     const result = await query(
-        `INSERT INTO chat_sessions (
-            participant_id, assignment_id, session_id, system_id, title
+        `INSERT INTO chat_threads (
+            participant_id, assignment_id, study_session_id, system_id, title
          ) VALUES (?, ?, ?, ?, ?)`,
         [
             data.participantID,
             data.assignmentId,
-            data.sessionID ?? null,
+            data.studySessionId ?? null,
             data.systemID ?? null,
             data.title ?? null,
         ]
@@ -67,16 +67,16 @@ async function create(data) {
 }
 
 async function update(id, fields) {
-    const session = await findById(id);
-    if (!session) {
+    const thread = await findById(id);
+    if (!thread) {
         return null;
     }
 
     const title =
-        fields.title !== undefined ? fields.title : session.title;
+        fields.title !== undefined ? fields.title : thread.title;
 
     await query(
-        `UPDATE chat_sessions
+        `UPDATE chat_threads
          SET title = ?, updated_at = CURRENT_TIMESTAMP(3)
          WHERE id = ?`,
         [title ?? null, toId(id)]
@@ -90,7 +90,7 @@ async function touch(id) {
         return null;
     }
     await query(
-        `UPDATE chat_sessions
+        `UPDATE chat_threads
          SET updated_at = CURRENT_TIMESTAMP(3)
          WHERE id = ?`,
         [toId(id)]

@@ -6,7 +6,7 @@ const ATTACHMENT_KEYS = {
     participant_id: "participantID",
     assignment_id: "assignmentId",
     system_id: "systemID",
-    chat_session_id: "chatSessionId",
+    chat_thread_id: "chatThreadId",
     exchange_id: "exchangeId",
     original_filename: "originalFilename",
     stored_filename: "storedFilename",
@@ -24,8 +24,8 @@ function mapAttachment(row) {
         return null;
     }
     const mapped = mapKeys(row, ATTACHMENT_KEYS);
-    if (mapped.chatSessionId != null) {
-        mapped.chatSessionId = String(mapped.chatSessionId);
+    if (mapped.chatThreadId != null) {
+        mapped.chatThreadId = String(mapped.chatThreadId);
     }
     if (mapped.exchangeId != null) {
         mapped.exchangeId = String(mapped.exchangeId);
@@ -50,22 +50,22 @@ async function findById(id) {
     return mapAttachment(rows[0] || null);
 }
 
-async function findPendingBySession(chatSessionId) {
-    if (!isValidId(chatSessionId)) {
+async function findPendingByThread(chatThreadId) {
+    if (!isValidId(chatThreadId)) {
         return [];
     }
     const rows = await query(
         `SELECT * FROM chat_attachments
-         WHERE chat_session_id = ? AND exchange_id IS NULL
+         WHERE chat_thread_id = ? AND exchange_id IS NULL
          ORDER BY created_at ASC`,
-        [toId(chatSessionId)]
+        [toId(chatThreadId)]
     );
     return rows.map(mapAttachment);
 }
 
-async function findUnlinkedByIds(ids, chatSessionId) {
+async function findUnlinkedByIds(ids, chatThreadId) {
     const validIds = [...new Set(ids.map(String))].filter(isValidId).map(toId);
-    if (!validIds.length || !isValidId(chatSessionId)) {
+    if (!validIds.length || !isValidId(chatThreadId)) {
         return [];
     }
 
@@ -73,9 +73,9 @@ async function findUnlinkedByIds(ids, chatSessionId) {
     const rows = await query(
         `SELECT * FROM chat_attachments
          WHERE id IN (${placeholders})
-           AND chat_session_id = ?
+           AND chat_thread_id = ?
            AND exchange_id IS NULL`,
-        [...validIds, toId(chatSessionId)]
+        [...validIds, toId(chatThreadId)]
     );
     return rows.map(mapAttachment);
 }
@@ -96,7 +96,7 @@ async function findByIds(ids) {
 async function create(data) {
     const result = await query(
         `INSERT INTO chat_attachments (
-            participant_id, assignment_id, system_id, chat_session_id, exchange_id,
+            participant_id, assignment_id, system_id, chat_thread_id, exchange_id,
             original_filename, stored_filename, mime_type, size_bytes,
             status, error_message, chunk_count
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
@@ -104,7 +104,7 @@ async function create(data) {
             data.participantID,
             data.assignmentId,
             data.systemID ?? null,
-            toId(data.chatSessionId),
+            toId(data.chatThreadId),
             data.exchangeId ? toId(data.exchangeId) : null,
             data.originalFilename,
             data.storedFilename,
@@ -174,7 +174,7 @@ async function remove(id) {
 
 module.exports = {
     findById,
-    findPendingBySession,
+    findPendingByThread,
     findUnlinkedByIds,
     findByIds,
     create,

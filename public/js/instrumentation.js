@@ -22,10 +22,10 @@
         return Date.now();
     }
 
-    function currentChatSession() {
+    function currentChatThread() {
         try {
-            return typeof currentChatSessionId !== "undefined"
-                ? currentChatSessionId
+            return typeof currentChatThreadId !== "undefined"
+                ? currentChatThreadId
                 : null;
         } catch {
             return null;
@@ -100,6 +100,38 @@
     window.addEventListener("pagehide", () => {
         finishAllIntervals();
         endTelemetrySession("pagehide");
+    });
+
+    // Back-forward cache: the browser froze the page after pagehide and is now
+    // resuming it in place, with all of this script's state intact. Without
+    // this the sitting stays closed and nothing else from it is recorded.
+    window.addEventListener("pageshow", (event) => {
+        if (!event.persisted) {
+            return;
+        }
+        const resumedAt = now();
+        lastHeartbeatAt = resumedAt;
+        windowStateSince = resumedAt;
+        tabStateSince = resumedAt;
+        windowFocused = document.hasFocus();
+        tabVisible = document.visibilityState === "visible";
+        startSnapshotTimer();
+
+        reopenTelemetrySession().then(() => {
+            logEvent({
+                eventType: "session_start",
+                elementName: "app",
+                page: "app",
+                eventProps: {
+                    systemID: config.systemID,
+                    aiEnabled: config.isAiEnabled,
+                    isNewSession: false,
+                    resumed: "bfcache",
+                    width: window.innerWidth,
+                    height: window.innerHeight,
+                },
+            });
+        });
     });
 
     // ------------------------------------------------------------- pane dwell
@@ -206,6 +238,7 @@
             deletes: 0,
             enters: 0,
             navigation: 0,
+            shortcuts: 0,
         };
     }
 
@@ -241,6 +274,7 @@
                 deletes: bucket.deletes,
                 enters: bucket.enters,
                 navigation: bucket.navigation,
+                shortcuts: bucket.shortcuts,
                 charDelta: surfaceLength(surface) - bucket.lengthAtStart,
             },
         });
@@ -262,7 +296,11 @@
 
         bucket.keystrokes += 1;
 
-        if (event.key === "Backspace") {
+        // Ctrl+Z, Ctrl+B, Ctrl+V and friends are commands, not characters;
+        // counting them as typed text would inflate the writing measures.
+        if (event.ctrlKey || event.metaKey || event.altKey) {
+            bucket.shortcuts += 1;
+        } else if (event.key === "Backspace") {
             bucket.backspaces += 1;
         } else if (event.key === "Delete") {
             bucket.deletes += 1;
@@ -307,7 +345,7 @@
             action,
             surface,
             content,
-            chatSessionId: surface === "editor" ? null : currentChatSession(),
+            chatThreadId: surface === "editor" ? null : currentChatThread(),
         });
     }
 
@@ -378,20 +416,25 @@
         const keystrokes = editorKeystrokesSinceSnapshot;
         editorKeystrokesSinceSnapshot = 0;
 
+        // Plain text and word counts are derived from the HTML on the server.
         postEditorSnapshot({
             contentHtml: editorEl.innerHTML,
-            plainText: editorEl.textContent,
             reason,
             keystrokesSincePrev: keystrokes,
         });
     }
 
-    if (editorEl) {
+    function startSnapshotTimer() {
+        if (!editorEl || snapshotTimer !== null) {
+            return;
+        }
         snapshotTimer = setInterval(
             () => captureEditorSnapshot("interval"),
             SNAPSHOT_MIN_INTERVAL_MS
         );
     }
+
+    startSnapshotTimer();
 
     // ---------------------------------------------------------------- heartbeat
 

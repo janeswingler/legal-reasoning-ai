@@ -4,7 +4,7 @@ const { mapKeys } = require("./helpers.js");
 
 const SNAPSHOT_KEYS = {
     id: "id",
-    session_id: "sessionID",
+    study_session_id: "studySessionId",
     participant_id: "participantID",
     assignment_id: "assignmentId",
     system_id: "systemID",
@@ -24,6 +24,41 @@ function sha256(value) {
 function countWords(text) {
     const trimmed = String(text || "").trim();
     return trimmed ? trimmed.split(/\s+/).length : 0;
+}
+
+const NAMED_ENTITIES = {
+    nbsp: " ",
+    amp: "&",
+    lt: "<",
+    gt: ">",
+    quot: '"',
+    apos: "'",
+};
+
+function decodeEntities(text) {
+    return text
+        .replace(/&#x([0-9a-f]+);/gi, (_, hex) => String.fromCodePoint(parseInt(hex, 16)))
+        .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+        .replace(/&([a-z]+);/gi, (match, name) => NAMED_ENTITIES[name.toLowerCase()] ?? match);
+}
+
+/**
+ * The editor's plain text is derived here rather than trusted from the client:
+ * the browser's textContent joins paragraphs with no separator, which merges
+ * the last word of one line with the first of the next and drops every line
+ * break from the exported text.
+ */
+function htmlToPlainText(html) {
+    return decodeEntities(
+        String(html || "")
+            .replace(/<br\s*\/?>/gi, "\n")
+            .replace(/<\/(p|div|li|h[1-6]|tr|blockquote|pre|section)>/gi, "\n")
+            .replace(/<[^>]+>/g, "")
+    )
+        .replace(/\r\n?/g, "\n")
+        .replace(/[ \t ]+\n/g, "\n")
+        .replace(/\n{3,}/g, "\n\n")
+        .trim();
 }
 
 function toDate(value) {
@@ -50,7 +85,7 @@ function toInt(value) {
  */
 async function create(data) {
     const contentHtml = String(data.contentHtml ?? "");
-    const plainText = String(data.plainText ?? "");
+    const plainText = htmlToPlainText(contentHtml);
     const contentHash = sha256(contentHtml);
 
     const previous = await query(
@@ -68,13 +103,13 @@ async function create(data) {
 
     const result = await query(
         `INSERT INTO editor_snapshots (
-            session_id, participant_id, assignment_id, system_id,
+            study_session_id, participant_id, assignment_id, system_id,
             captured_at, client_ts, reason,
             content_html, plain_text, char_count, word_count,
             content_hash, keystrokes_since_prev
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-            data.sessionID ?? null,
+            data.studySessionId ?? null,
             data.participantID ?? null,
             data.assignmentId ?? null,
             data.systemID ?? null,
@@ -91,7 +126,7 @@ async function create(data) {
     );
 
     const rows = await query(
-        `SELECT id, session_id, participant_id, assignment_id, system_id,
+        `SELECT id, study_session_id, participant_id, assignment_id, system_id,
                 captured_at, client_ts, reason, char_count, word_count,
                 content_hash, keystrokes_since_prev
          FROM editor_snapshots WHERE id = ? LIMIT 1`,
@@ -103,4 +138,5 @@ async function create(data) {
 
 module.exports = {
     create,
+    htmlToPlainText,
 };

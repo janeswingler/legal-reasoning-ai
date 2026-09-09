@@ -1,29 +1,18 @@
 const { query, getPool } = require("../config/db.js");
-const { mapKeys, parseJson } = require("./helpers.js");
-
-const INTERACTION_KEYS = {
-    id: "id",
-    participant_id: "participantID",
-    assignment_id: "assignmentId",
-    system_id: "systemID",
-    session_id: "sessionID",
-    session_seq: "sessionSeq",
-    event_type: "eventType",
-    element_name: "elementName",
-    event_props: "eventProps",
-    duration_ms: "durationMs",
-    value_num: "valueNum",
-    client_ts: "clientTs",
-    page: "page",
-    ui_version: "uiVersion",
-    timestamp: "timestamp",
-};
 
 const INSERT_COLUMNS = `(
-    participant_id, assignment_id, system_id, session_id, session_seq,
+    participant_id, assignment_id, system_id, study_session_id, session_seq,
     event_type, element_name, event_props, duration_ms, value_num,
     client_ts, page, ui_version, timestamp
 )`;
+
+const INSERT_SQL = `INSERT INTO system_interactions ${INSERT_COLUMNS}
+    VALUES ?
+    ON DUPLICATE KEY UPDATE id = id`;
+
+const INT_MAX = 2147483647;
+// duration_ms is BIGINT, but nothing legitimate exceeds a year.
+const MAX_DURATION_MS = 366 * 24 * 60 * 60 * 1000;
 
 function toDate(value, fallback = null) {
     if (!value) {
@@ -41,46 +30,37 @@ function toNumber(value) {
     return Number.isFinite(n) ? n : null;
 }
 
-function toRow(data, identity = {}) {
-    return [
-        data.participantID ?? identity.participantID ?? null,
-        data.assignmentId ?? identity.assignmentId ?? null,
-        data.systemID ?? identity.systemID ?? null,
-        data.sessionID ?? identity.sessionID ?? null,
-        toNumber(data.sessionSeq),
-        data.eventType ?? null,
-        data.elementName ?? null,
-        data.eventProps != null ? JSON.stringify(data.eventProps) : null,
-        toNumber(data.durationMs),
-        toNumber(data.valueNum),
-        toDate(data.clientTs),
-        data.page ?? null,
-        data.uiVersion ?? null,
-        toDate(data.timestamp, new Date()),
-    ];
-}
-
-function mapInteraction(row) {
-    if (!row) {
+function clamp(value, min, max) {
+    if (value === null) {
         return null;
     }
-    const mapped = mapKeys(row, INTERACTION_KEYS);
-    mapped.eventProps = parseJson(row.event_props, null);
-    return mapped;
+    return Math.min(max, Math.max(min, value));
 }
 
-async function create(data) {
-    const result = await query(
-        `INSERT INTO system_interactions ${INSERT_COLUMNS}
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        toRow(data)
-    );
+function truncate(value, max) {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    return String(value).slice(0, max);
+}
 
-    const rows = await query(
-        `SELECT * FROM system_interactions WHERE id = ? LIMIT 1`,
-        [result.insertId]
-    );
-    return mapInteraction(rows[0] || null);
+function toRow(data, identity = {}) {
+    return [
+        truncate(data.participantID ?? identity.participantID, 255),
+        truncate(data.assignmentId ?? identity.assignmentId, 255),
+        truncate(data.systemID ?? identity.systemID, 255),
+        truncate(data.studySessionId ?? identity.studySessionId, 255),
+        clamp(toNumber(data.sessionSeq), 0, INT_MAX),
+        truncate(data.eventType, 128),
+        truncate(data.elementName, 255),
+        data.eventProps != null ? JSON.stringify(data.eventProps) : null,
+        clamp(toNumber(data.durationMs), 0, MAX_DURATION_MS),
+        toNumber(data.valueNum),
+        toDate(data.clientTs),
+        truncate(data.page, 128),
+        truncate(data.uiVersion, 64),
+        toDate(data.timestamp, new Date()),
+    ];
 }
 
 /**
@@ -88,8 +68,12 @@ async function create(data) {
  *
  * ON DUPLICATE KEY UPDATE against uq_interactions_session_seq makes a retried
  * batch a no-op instead of a duplicate, so the client can resend freely after a
- * failed flush. Unlike INSERT IGNORE this only swallows duplicate-key errors,
- * leaving real problems (bad dates, oversized values) visible.
+ * failed flush.
+ *
+ * A multi-row INSERT is all-or-nothing, and the client would retry a rejected
+ * batch until its queue overflowed, losing everything behind it. So when the
+ * batch fails, each event is tried on its own and only the bad rows are
+ * dropped — loudly, so the gap in session_seq has an explanation in the logs.
  */
 async function createMany(events, identity = {}) {
     if (!Array.isArray(events) || events.length === 0) {
@@ -98,19 +82,33 @@ async function createMany(events, identity = {}) {
 
     const values = events.map((event) => toRow(event, identity));
 
-    // pool.query (not execute) so mysql2 expands the nested array into a
-    // multi-row VALUES list; execute would need a fixed placeholder count.
-    const [result] = await getPool().query(
-        `INSERT INTO system_interactions ${INSERT_COLUMNS}
-         VALUES ?
-         ON DUPLICATE KEY UPDATE id = id`,
-        [values]
-    );
+    try {
+        // pool.query (not execute) so mysql2 expands the nested array into a
+        // multi-row VALUES list; execute would need a fixed placeholder count.
+        const [result] = await getPool().query(INSERT_SQL, [values]);
+        return result.affectedRows;
+    } catch (batchError) {
+        console.error(
+            `telemetry: batch of ${values.length} events rejected (${batchError.message}); retrying one by one`
+        );
+    }
 
-    return result.affectedRows;
+    let inserted = 0;
+    for (let index = 0; index < values.length; index += 1) {
+        try {
+            const [result] = await getPool().query(INSERT_SQL, [[values[index]]]);
+            inserted += result.affectedRows;
+        } catch (rowError) {
+            const event = events[index] || {};
+            console.error(
+                `telemetry: dropped event session=${identity.studySessionId ?? event.studySessionId} ` +
+                    `seq=${event.sessionSeq} type=${event.eventType}: ${rowError.message}`
+            );
+        }
+    }
+    return inserted;
 }
 
 module.exports = {
-    create,
     createMany,
 };

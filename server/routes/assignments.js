@@ -13,15 +13,20 @@ const {
     saveSubmissionLocally,
 } = require("../services/submissionStorage.js");
 const { renderPleadingPdf } = require("../services/pdfGenerator.js");
+const { resolveAssignmentState } = require("../services/assignmentState.js");
 const {
-    ASSIGNMENT_STATES,
-    resolveAssignmentState,
-} = require("../services/assignmentState.js");
+    attachStudyIdentity,
+    IDENTITY_ERROR_MESSAGE,
+} = require("../middleware/studyIdentity.js");
 
 const router = express.Router();
 
+const IDENTITY_REQUIRED_MESSAGE = "participantID and assignmentId required";
+
 const WRITING_LOCKED_MESSAGE =
     "This memo has been submitted and can no longer be edited.";
+const SAVE_CONFLICT_MESSAGE =
+    "This memo was updated in another tab or device. Reload the page to see the latest version.";
 
 const upload = multer({
     storage: multer.memoryStorage(),
@@ -62,32 +67,15 @@ function getSubmissionNotConfiguredMessage() {
     );
 }
 
-router.get("/", async (req, res) => {
-    try {
-        const { participantID } = req.query;
-        if (!participantID) {
-            return res.status(400).json({ error: "participantID required" });
-        }
-        const assignments = await assignmentsDb.findByParticipant(participantID);
-        res.json(assignments);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
 router.get("/current", async (req, res) => {
     try {
-        const { participantID, assignmentId } = req.query;
-
-        if (!participantID || !assignmentId) {
-            return res.status(400).json({
-                error: "participantID and assignmentId required",
-            });
+        if (!req.study) {
+            return res.status(400).json({ error: IDENTITY_REQUIRED_MESSAGE });
         }
 
         const assignment = await assignmentsDb.findByParticipantAndAssignment(
-            participantID,
-            assignmentId
+            req.study.participantID,
+            req.study.memoId
         );
 
         if (!assignment) {
@@ -96,47 +84,19 @@ router.get("/current", async (req, res) => {
 
         res.json({ ...assignment, state: resolveAssignmentState(assignment) });
     } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-router.get("/:id", async (req, res) => {
-    try {
-        const assignment = await assignmentsDb.findById(req.params.id);
-        if (!assignment) {
-            return res.status(404).json({ error: "Assignment not found" });
-        }
-        res.json(assignment);
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
-
-router.post("/", async (req, res) => {
-    try {
-        const assignment = await assignmentsDb.create(req.body);
-        res.status(201).json(assignment);
-    } catch (error) {
-        res.status(400).json({ error: error.message });
+        console.error("Assignment load error:", error);
+        res.status(500).json({ error: "Could not load the assignment" });
     }
 });
 
 router.put("/current", async (req, res) => {
     try {
-        const {
-            participantID,
-            assignmentId,
-            sessionID,
-            systemID,
-            content,
-            title,
-        } = req.body;
-
-        if (!participantID || !assignmentId) {
-            return res.status(400).json({
-                error: "participantID and assignmentId required",
-            });
+        if (!req.study) {
+            return res.status(400).json({ error: IDENTITY_REQUIRED_MESSAGE });
         }
+
+        const { participantID, memoId: assignmentId, systemID } = req.study;
+        const { studySessionId, content, title, expectedVersion } = req.body;
 
         // The editor also goes read-only on submit, but autosave is the one
         // caller that could still be in flight, so the lock is enforced here.
@@ -152,18 +112,42 @@ router.put("/current", async (req, res) => {
             });
         }
 
-        const { assignment, created } = await assignmentsDb.upsertCurrent({
+        const { assignment, created, conflict } = await assignmentsDb.upsertCurrent({
             participantID,
             assignmentId,
-            sessionID,
+            studySessionId,
             systemID,
             content,
             title,
+            expectedVersion,
         });
+
+        if (conflict) {
+            // Someone else's write landed between our read and ours. Report
+            // whatever is on the row now rather than clobbering it — and if
+            // that write was the submit itself, say so instead of "reload".
+            const latest = await assignmentsDb.findByParticipantAndAssignment(
+                participantID,
+                assignmentId
+            );
+            if (latest?.submittedAt) {
+                return res.status(409).json({
+                    error: WRITING_LOCKED_MESSAGE,
+                    state: resolveAssignmentState(latest),
+                });
+            }
+            return res.status(409).json({
+                error: SAVE_CONFLICT_MESSAGE,
+                conflict: true,
+                state: resolveAssignmentState(latest),
+                assignment: latest,
+            });
+        }
 
         res.status(created ? 201 : 200).json(assignment);
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        console.error("Assignment save error:", error);
+        res.status(500).json({ error: "Could not save the assignment" });
     }
 });
 
@@ -203,14 +187,16 @@ router.post("/submit", (req, res) => {
                 });
             }
 
-            const { participantID, assignmentId, sessionID, systemID, title } =
-                req.body;
-
-            if (!participantID || !assignmentId) {
-                return res.status(400).json({
-                    error: "participantID and assignmentId required",
-                });
+            // Multipart fields only exist now that multer has run, so the
+            // study identity is resolved here rather than by the middleware.
+            let study;
+            try {
+                study = attachStudyIdentity(req);
+            } catch (error) {
+                return res.status(403).json({ error: IDENTITY_ERROR_MESSAGE });
             }
+            const { participantID, memoId: assignmentId, systemID } = study;
+            const { studySessionId, title } = req.body;
 
             if (!req.file?.buffer?.length) {
                 return res.status(400).json({ error: "PDF file required" });
@@ -240,7 +226,7 @@ router.post("/submit", (req, res) => {
                 assignment = await assignmentsDb.create({
                     participantID,
                     assignmentId,
-                    sessionID,
+                    studySessionId,
                     systemID,
                     title: title || `${assignmentId} assignment`,
                     content: "<p><br></p>",
@@ -269,12 +255,11 @@ router.post("/submit", (req, res) => {
                 } catch (driveError) {
                     if (localResult) {
                         assignment = await assignmentsDb.updateById(assignment.id, {
-                            sessionID: sessionID || assignment.sessionID,
-                            systemID: systemID || assignment.systemID,
+                            studySessionId: studySessionId || assignment.studySessionId,
+                            systemID,
                             title: title || assignment.title,
                             submittedAt: new Date(),
                             localFilePath: localResult.filePath,
-                            version: assignment.version,
                         });
 
                         return res.json({
@@ -292,11 +277,10 @@ router.post("/submit", (req, res) => {
             }
 
             const updateFields = {
-                sessionID: sessionID || assignment.sessionID,
-                systemID: systemID || assignment.systemID,
+                studySessionId: studySessionId || assignment.studySessionId,
+                systemID,
                 title: title || assignment.title,
                 submittedAt: new Date(),
-                version: assignment.version,
             };
 
             if (localResult) {
@@ -327,29 +311,6 @@ router.post("/submit", (req, res) => {
             });
         }
     });
-});
-
-router.put("/:id", async (req, res) => {
-    try {
-        const existing = await assignmentsDb.findById(req.params.id);
-        if (!existing) {
-            return res.status(404).json({ error: "Assignment not found" });
-        }
-
-        if (existing.submittedAt) {
-            return res.status(409).json({ error: WRITING_LOCKED_MESSAGE });
-        }
-
-        const { title, content } = req.body;
-        const fields = {};
-        if (title !== undefined) fields.title = title;
-        if (content !== undefined) fields.content = content;
-
-        const assignment = await assignmentsDb.updateById(req.params.id, fields);
-        res.json(assignment);
-    } catch (error) {
-        res.status(400).json({ error: error.message });
-    }
 });
 
 module.exports = router;

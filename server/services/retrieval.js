@@ -160,13 +160,13 @@ function formatRetrievedContext(chunks) {
         .join("\n\n");
 }
 
-async function retrieveChunksForSession(chatSessionId, query, limit = TOP_K) {
-    const result = await retrieveWithMeta(chatSessionId, query, limit);
+async function retrieveChunksForThread(chatThreadId, query, limit = TOP_K) {
+    const result = await retrieveWithMeta(chatThreadId, query, limit);
     return result.chunks;
 }
 
-async function retrieveWithMeta(chatSessionId, query, limit = TOP_K) {
-    const chunks = await documentChunksDb.findBySessionId(chatSessionId);
+async function retrieveWithMeta(chatThreadId, query, limit = TOP_K) {
+    const chunks = await documentChunksDb.findByThreadId(chatThreadId);
 
     if (!chunks.length || !query?.trim()) {
         return { chunks: [], scores: [], ragVersion: RAG_VERSION };
@@ -246,7 +246,7 @@ async function retrieveWithMeta(chatSessionId, query, limit = TOP_K) {
 }
 
 module.exports = {
-    retrieveChunksForSession,
+    retrieveChunksForThread,
     retrieveWithMeta,
     formatRetrievedContext,
 };

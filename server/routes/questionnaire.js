@@ -129,7 +129,6 @@ router.get("/complete", async (req, res) => {
         if (state === ASSIGNMENT_STATES.QUESTIONNAIRE) {
             await assignmentsDb.updateById(assignment.id, {
                 questionnaireCompletedAt: new Date(),
-                version: assignment.version,
             });
         }
     } catch (error) {

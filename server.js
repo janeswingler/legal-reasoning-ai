@@ -6,6 +6,7 @@ const https = require("https");
 const path = require("path");
 const { connectDB } = require("./server/config/db.js");
 const { accessGateMiddleware } = require("./server/middleware/accessGate.js");
+const { studyIdentityMiddleware } = require("./server/middleware/studyIdentity.js");
 const { closeBrowser, warmUp } = require("./server/services/pdfGenerator.js");
 const assignmentsDb = require("./server/db/assignments.js");
 const { sanitizeId } = require("./server/services/studyIdentifiers.js");
@@ -27,7 +28,6 @@ const accessRoutes = require("./server/routes/access.js");
 const assignmentsRoutes = require("./server/routes/assignments.js");
 const questionnaireRoutes = require("./server/routes/questionnaire.js");
 const chatRoutes = require("./server/routes/chat.js");
-const systemInteractionRoutes = require("./server/routes/systemInteractions.js");
 const telemetryRoutes = require("./server/routes/telemetry.js");
 const googleAuthRoutes = require("./server/routes/googleAuth.js");
 
@@ -113,9 +113,12 @@ app.get("/app.html", async (req, res, next) => {
     return next();
 });
 
+// Resolves the participant's condition from the study mapping for every data
+// API, so nothing downstream trusts the systemID the browser sent.
+app.use(["/api/assignments", "/api/chat", "/api/telemetry"], studyIdentityMiddleware);
+
 app.use("/api/assignments", assignmentsRoutes);
 app.use("/api/chat", chatRoutes);
-app.use("/api/system-interactions", systemInteractionRoutes);
 app.use("/api/telemetry", telemetryRoutes);
 app.use("/api/auth/google", googleAuthRoutes);
 

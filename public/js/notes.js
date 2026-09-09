@@ -23,6 +23,12 @@ let pleadingEditor = null;
 let saveTimer = null;
 let isInitializing = true;
 let cachedPdf = null;
+let saveInFlight = false;
+let saveQueued = false;
+let saveBlocked = false;
+// The version last loaded/saved from the server. Sent back on every save so
+// the server can detect a save that would overwrite a newer one.
+let currentVersion = null;
 // Mirrors assignments.submitted_at / questionnaire_completed_at on the server,
 // which is the only durable record of how far through the assignment they are.
 let assignmentState = "writing";
@@ -193,46 +199,82 @@ function getNoteTitle() {
 }
 
 async function saveCurrentNote() {
-    if (isWritingLocked()) {
+    if (isWritingLocked() || saveBlocked) {
         return;
     }
 
-    const payload = {
-        participantID: config.participantID,
-        // The API and the assignment_id database column still use the old
-        // name; only the participant-facing vocabulary moved to "memo".
-        assignmentId: config.memoId,
-        sessionID: config.sessionID,
-        systemID: config.systemID,
-        title: getNoteTitle(),
-        content: getEditorHtml(),
-    };
-
-    const response = await fetch("/api/assignments/current", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-    });
-
-    if (response.status === 409) {
-        // Submitted elsewhere while this tab was open. Stop trying to save.
-        const result = await response.json().catch(() => ({}));
-        applyAssignmentState(result.state || "questionnaire");
-        setSaveStatus("Submitted");
+    // A save is already in flight (slow network): don't fire an overlapping
+    // request that could land out of order and overwrite it. Save again with
+    // whatever's in the editor once the in-flight one finishes.
+    if (saveInFlight) {
+        saveQueued = true;
         return;
     }
+    saveInFlight = true;
 
-    if (!response.ok) {
-        setSaveStatus("Save failed");
-        return;
+    try {
+        const payload = {
+            participantID: config.participantID,
+            // The API and the assignment_id database column still use the old
+            // name; only the participant-facing vocabulary moved to "memo".
+            assignmentId: config.memoId,
+            studySessionId: config.studySessionId,
+            systemID: config.systemID,
+            title: getNoteTitle(),
+            content: getEditorHtml(),
+            expectedVersion: currentVersion,
+        };
+
+        const response = await fetch("/api/assignments/current", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+        });
+
+        if (response.status === 409) {
+            const result = await response.json().catch(() => ({}));
+
+            if (result.conflict) {
+                // Another tab or device saved first. Ours would silently
+                // overwrite it, so stop autosaving and make the student reload
+                // instead of losing whichever draft doesn't win the race.
+                saveBlocked = true;
+                clearTimeout(saveTimer);
+                setSaveStatus("Save failed");
+                alert(
+                    result.error ||
+                        "This memo was updated in another tab or device. Reload the page to see the latest version."
+                );
+                return;
+            }
+
+            // Submitted elsewhere while this tab was open. Stop trying to save.
+            applyAssignmentState(result.state || "questionnaire");
+            setSaveStatus("Submitted");
+            return;
+        }
+
+        if (!response.ok) {
+            setSaveStatus("Save failed");
+            return;
+        }
+
+        const result = await response.json();
+        if (typeof result.version === "number") {
+            currentVersion = result.version;
+        }
+        setSaveStatus("Saved");
+    } finally {
+        saveInFlight = false;
+        if (saveQueued) {
+            saveQueued = false;
+            scheduleSave();
+        }
     }
-
-    await response.json();
-    setSaveStatus("Saved");
 }
 
 function scheduleSave() {
-    if (isInitializing || isWritingLocked()) return;
+    if (isInitializing || isWritingLocked() || saveBlocked) return;
     // Catches changes with no keystroke behind them: pastes, toolbar
     // formatting, and list operations.
     window.markEditorDirty?.();
@@ -449,7 +491,7 @@ async function submitMemo() {
         formData.append("participantID", config.participantID);
         // Wire field name is unchanged; see saveCurrentNote.
         formData.append("assignmentId", config.memoId);
-        formData.append("sessionID", config.sessionID);
+        formData.append("studySessionId", config.studySessionId);
         formData.append("systemID", config.systemID);
         formData.append("title", getNoteTitle());
 
@@ -696,6 +738,9 @@ async function initNote() {
             setEditorHtml(parseNoteContent(note.content || ""));
             invalidatePdfCache();
             applyAssignmentState(note.state || "writing");
+            if (typeof note.version === "number") {
+                currentVersion = note.version;
+            }
             setSaveStatus("Loaded");
             return;
         }

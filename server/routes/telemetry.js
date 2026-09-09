@@ -7,27 +7,37 @@ const clipboardEventsDb = require("../db/clipboardEvents.js");
 const router = express.Router();
 
 const MAX_EVENTS_PER_BATCH = 200;
+const IDENTITY_REQUIRED_MESSAGE = "participantID, assignmentId, and studySessionId required";
 
-function readIdentity(body) {
+function readIdentity(req) {
+    const body = req.body || {};
     return {
-        participantID: body?.participantID ?? null,
-        assignmentId: body?.assignmentId ?? null,
-        sessionID: body?.sessionID ?? null,
-        systemID: body?.systemID ?? null,
+        participantID: req.study?.participantID ?? null,
+        assignmentId: req.study?.memoId ?? null,
+        studySessionId: body.studySessionId ?? null,
+        // The condition is what the study mapping says, never what the page sent.
+        systemID: req.study?.systemID ?? null,
     };
 }
 
 function requireIdentity(identity) {
-    return Boolean(identity.participantID && identity.assignmentId && identity.sessionID);
+    return Boolean(identity.participantID && identity.assignmentId && identity.studySessionId);
+}
+
+/**
+ * Telemetry failures must be loud on the server: the browser deliberately
+ * swallows them so a participant is never interrupted by logging.
+ */
+function fail(res, label, error) {
+    console.error(`telemetry: ${label} failed:`, error);
+    res.status(500).json({ error: `${label} failed` });
 }
 
 router.post("/session/start", async (req, res) => {
     try {
-        const identity = readIdentity(req.body);
+        const identity = readIdentity(req);
         if (!requireIdentity(identity)) {
-            return res.status(400).json({
-                error: "participantID, assignmentId, and sessionID required",
-            });
+            return res.status(400).json({ error: IDENTITY_REQUIRED_MESSAGE });
         }
 
         const { session, serverNow } = await studySessionsDb.start({
@@ -43,17 +53,15 @@ router.post("/session/start", async (req, res) => {
 
         res.status(201).json({ session, serverNow: serverNow.toISOString() });
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        fail(res, "session/start", error);
     }
 });
 
 router.post("/events", async (req, res) => {
     try {
-        const identity = readIdentity(req.body);
+        const identity = readIdentity(req);
         if (!requireIdentity(identity)) {
-            return res.status(400).json({
-                error: "participantID, assignmentId, and sessionID required",
-            });
+            return res.status(400).json({ error: IDENTITY_REQUIRED_MESSAGE });
         }
 
         const events = Array.isArray(req.body?.events) ? req.body.events : [];
@@ -67,19 +75,29 @@ router.post("/events", async (req, res) => {
 
         // Keeps last_seen_at fresh so a session whose close beacon is lost can
         // still be bounded during analysis.
-        await studySessionsDb.touch(identity.sessionID);
+        const touched = await studySessionsDb.touch(identity.studySessionId);
+
+        // If the session/start request was lost (a network blip at page load),
+        // the events still name the sitting. Open it from them rather than let
+        // the memo disappear from the summary view.
+        if (!touched) {
+            await studySessionsDb.start({
+                ...identity,
+                userAgent: req.get("user-agent"),
+            });
+        }
 
         res.status(201).json({ inserted });
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        fail(res, "events", error);
     }
 });
 
 router.post("/session/end", async (req, res) => {
     try {
-        const identity = readIdentity(req.body);
-        if (!identity.sessionID) {
-            return res.status(400).json({ error: "sessionID required" });
+        const identity = readIdentity(req);
+        if (!identity.studySessionId) {
+            return res.status(400).json({ error: "studySessionId required" });
         }
 
         // A close beacon usually carries the final queued events alongside it.
@@ -88,30 +106,24 @@ router.post("/session/end", async (req, res) => {
             await systemInteractionsDb.createMany(events, identity);
         }
 
-        await studySessionsDb.end(identity.sessionID, {
-            endedAt: req.body?.endedAt,
-            reason: req.body?.reason,
-        });
+        await studySessionsDb.end(identity.studySessionId, { reason: req.body?.reason });
 
         res.status(200).json({ ok: true });
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        fail(res, "session/end", error);
     }
 });
 
 router.post("/snapshot", async (req, res) => {
     try {
-        const identity = readIdentity(req.body);
+        const identity = readIdentity(req);
         if (!requireIdentity(identity)) {
-            return res.status(400).json({
-                error: "participantID, assignmentId, and sessionID required",
-            });
+            return res.status(400).json({ error: IDENTITY_REQUIRED_MESSAGE });
         }
 
         const result = await editorSnapshotsDb.create({
             ...identity,
             contentHtml: req.body?.contentHtml,
-            plainText: req.body?.plainText,
             reason: req.body?.reason,
             clientTs: req.body?.clientTs,
             keystrokesSincePrev: req.body?.keystrokesSincePrev,
@@ -119,31 +131,34 @@ router.post("/snapshot", async (req, res) => {
 
         res.status(result.skipped ? 200 : 201).json(result);
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        fail(res, "snapshot", error);
     }
 });
 
 router.post("/clipboard", async (req, res) => {
     try {
-        const identity = readIdentity(req.body);
+        const identity = readIdentity(req);
         if (!requireIdentity(identity)) {
-            return res.status(400).json({
-                error: "participantID, assignmentId, and sessionID required",
-            });
+            return res.status(400).json({ error: IDENTITY_REQUIRED_MESSAGE });
+        }
+
+        const action = String(req.body?.action || "").toLowerCase();
+        if (!["copy", "cut", "paste"].includes(action)) {
+            return res.status(400).json({ error: "action must be copy, cut, or paste" });
         }
 
         const event = await clipboardEventsDb.create({
             ...identity,
-            action: req.body?.action,
+            action,
             surface: req.body?.surface,
             content: req.body?.content,
-            chatSessionId: req.body?.chatSessionId,
+            chatThreadId: req.body?.chatThreadId,
             clientTs: req.body?.clientTs,
         });
 
         res.status(201).json(event);
     } catch (error) {
-        res.status(400).json({ error: error.message });
+        fail(res, "clipboard", error);
     }
 });
 

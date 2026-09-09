@@ -10,6 +10,7 @@
     "smoke:mysql": "node scripts/smoke-mysql.js",
     "smoke:telemetry": "node scripts/smoke-telemetry.js",
     "study:export": "node scripts/export-study-data.js",
+    "study:recompute-origins": "node scripts/recompute-clipboard-origin.js",
     "google-drive-oauth": "node scripts/google-drive-oauth.js"
   },
   "keywords": [],

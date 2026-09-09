@@ -106,10 +106,16 @@ async function getChatCompletion(
         );
     }
 
-    return { text, stopReason };
+    return {
+        text,
+        stopReason,
+        model: response.model || MODEL,
+        inputTokens: response.usage?.input_tokens ?? null,
+        outputTokens: response.usage?.output_tokens ?? null,
+    };
 }
 
-async function generateSessionTitle(userInput, botResponse) {
+async function generateThreadTitle(userInput, botResponse) {
     const anthropic = getClient();
 
     const response = await anthropic.messages.create({
@@ -129,6 +135,7 @@ async function generateSessionTitle(userInput, botResponse) {
 }
 
 module.exports = {
+    MODEL,
     getChatCompletion,
-    generateSessionTitle,
+    generateThreadTitle,
 };

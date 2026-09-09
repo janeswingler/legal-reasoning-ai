@@ -26,9 +26,28 @@ We record four kinds of thing:
    actual text of everything they copied and pasted, including whether pasted
    text came from the AI, from their own draft, or from outside the system.
 
-Everything is timestamped to the millisecond and tied to a **session**, meaning
-one sitting at the computer. Closing the browser and coming back later produces
-a new session, so gaps in work are visible.
+Everything is timestamped to the millisecond and tied to a **study session**,
+meaning one sitting at the computer on one memo (column `study_session_id`).
+Closing the browser and coming back later produces a new session, so gaps in
+work are visible. A page reload does not: the sitting simply continues.
+
+A **chat thread** (`chat_thread_id`) is one conversation with the assistant. A
+sitting can hold several threads, and a thread can be continued across
+sittings. The two are always named distinctly in the data.
+
+Every table and export carries the same identity columns — `participant_id`,
+`assignment_id` (memo), `study_session_id` where it applies — so files can be
+joined directly. The summary and analysis views also add `memo_number` (the
+numeric part of `assignment_id`) and `study_condition` (`AI` / `NoAI`).
+
+Timestamps are stored in UTC and written to the export in **Pacific time**, in
+the form `2026-09-08T14:03:00.123-07:00` (the trailing offset is `-07:00` in
+summer and `-08:00` in winter, so values on either side of the daylight-saving
+change still sort and subtract correctly).
+
+Which mode a participant is in is decided on the server from the study's
+condition mapping, for every request. The `system_id` recorded on any row is
+that server-side value, never something the browser reported.
 
 ---
 
@@ -38,10 +57,20 @@ a new session, so gaps in work are visible.
 npm run study:export
 ```
 
-This writes a folder of CSV files that open directly in Excel, R or SPSS. The
-file most analyses will start from is `participant_week_summary.csv`, which has
-one row per participant per week with the headline measures already computed.
-The other files hold the raw records behind those numbers.
+This writes a folder of CSV files that open directly in Excel, R or SPSS.
+
+| File | One row per… | Use it for |
+| --- | --- | --- |
+| `participant_week_summary.csv` | participant × memo | **Start here.** All headline measures, already computed |
+| `session_summary.csv` | sitting | The same measures at the sitting level, for models with a sitting term |
+| `typing_bursts.csv` | 10-second typing window | Keystrokes, characters, backspaces, deletions, shortcuts, net length change |
+| `heartbeats.csv` | 30-second heartbeat | Whether the tab was visible, the window focused, and any input occurred |
+| `attention.csv` | focus change | Away episodes, tab switches, time in the editor vs. the chat |
+| `chat_turns.csv` | prompt sent | Prompt and reply length, whether answered, model, tokens, wait time |
+| `study_sessions.csv`, `events.csv`, `clipboard_events.csv`, `editor_snapshots.csv`, `assignments.csv`, `chat_threads.csv`, `chat_exchanges.csv`, `chat_attachments.csv` | raw record | The records behind the numbers above, including all text |
+
+The first six are produced by database *views* — saved queries that unpack the
+per-event details into plain columns — so nothing in them needs parsing.
 
 ---
 
@@ -69,21 +98,23 @@ number the event is about).
 
 | `event_type` | What it means | What is in `duration_ms` / `value_num` |
 | --- | --- | --- |
-| `session_start` | App opened. `isNewSession: false` in the details means a page refresh rather than a fresh arrival | — |
+| `session_start` | App opened. `isNewSession: false` in the details means a page refresh rather than a fresh arrival; `resumed: "bfcache"` means the browser brought the page back from its back/forward cache | — |
 | _(no event)_ | App closing is not written to this table. It is recorded on the sitting itself, as `ended_at` and `end_reason` in `study_sessions` | — |
 | `heartbeat` | Emitted every 30 seconds. Details record whether the tab was visible, whether the window had focus, and whether there was any activity | Length of the interval |
 | `window_blur` | Participant moved to another application or window | How long they had been present |
 | `window_focus` | Participant came back | **How long they were away** |
 | `tab_hidden` / `tab_visible` | Switched to another browser tab and back | Time in the previous state |
 | `surface_focus` / `surface_blur` | Moved into or out of the editor or the chat box | Time spent in that pane |
-| `typing_burst` | A 10-second window containing typing. Details break it into characters, backspaces, deletes, Enter presses, arrow keys, and the net change in length | `value_num` = number of keys pressed |
+| `typing_burst` | A 10-second window containing typing. Details break it into characters, backspaces, deletes, Enter presses, arrow keys, keyboard shortcuts (Ctrl/Cmd combinations such as undo or paste, which are not counted as characters), and the net change in length | `value_num` = number of keys pressed |
 | `chat_send` | A prompt was sent | `value_num` = prompt length in characters |
 | `chat_response` | A reply arrived | Time the participant waited |
 | `chat_stop` | Participant cancelled a reply mid-generation | — |
-| `chat_session_switch` | Moved between conversation threads | — |
+| `chat_thread_switch` | Moved between conversation threads | — |
 | `chat_new` | Started a new conversation | — |
 | `attachment_add` | Uploaded a PDF to the chat | File size |
+| `submit_confirm_open` / `submit_confirm_cancel` | Opened the "are you sure?" dialog before submitting, or backed out of it | — |
 | `submit` / `export_pdf` | Submitted or downloaded the assignment | Length of the document |
+| `qualtrics_continue` / `qualtrics_defer` | After submitting, went on to the questionnaire now or chose to do it later | — |
 | `split_resize` | Dragged the divider between chat and editor | Proportion given to the chat |
 | `viewport_resize` | Resized the window | — |
 | `sidebar_toggle` | Showed or hid the conversation list | — |
@@ -96,13 +127,15 @@ to reach the server. **In testing there were no gaps.**
 
 A copy of the assignment is stored at most every 30 seconds while it is being
 changed, and always when the participant leaves the editor, submits, exports, or
-closes the tab. Snapshots identical to the one before are discarded, so idle
-time does not fill the table.
+switches to another tab or window. (Closing the tab outright is too late for a
+document-sized request, so the last change before a close is captured by the
+preceding interval or tab switch.) Snapshots identical to the one before are
+discarded, so idle time does not fill the table.
 
 | Column | Meaning |
 | --- | --- |
 | `captured_at`, `reason` | When, and what prompted the capture |
-| `plain_text`, `content_html` | The draft at that moment, as text and with formatting |
+| `plain_text`, `content_html` | The draft at that moment, as text and with formatting. The text is derived from the formatting on the server, with one line per paragraph |
 | `char_count`, `word_count` | Size at that moment |
 | `keystrokes_since_prev` | How much typing happened since the previous snapshot |
 
@@ -120,7 +153,12 @@ draft was kept.
 | `origin` | For pastes only, see below |
 
 `origin` is worked out by checking whether the pasted text was ever copied
-inside the system:
+inside the system. The comparison ignores differences in spacing and line
+breaks, because browsers report a copied selection and the pasted clipboard
+text slightly differently. It can be recomputed from the stored text at any
+time with `npm run study:recompute-origins`; do this once before analysis so
+the classification does not depend on the order in which events reached the
+server.
 
 - `internal_chat_assistant` — **copied out of an AI reply.** The clearest
   measure of AI text being adopted into the assignment.
@@ -130,18 +168,32 @@ inside the system:
   tab, a document, or another AI tool
 - `unknown` — text too short (under 8 characters) to attribute confidently
 
-### `assignments`, `chat_sessions`, `chat_exchanges`, `chat_attachments`
+### `assignments`, `chat_threads`, `chat_exchanges`, `chat_attachments`
 
-Unchanged from before. `assignments` holds the current draft and submission
-details. `chat_exchanges` holds every prompt and reply in full, along with which
-parts of any uploaded PDF the AI drew on.
+`assignments` holds the current draft and submission details. `chat_threads`
+is the list of conversations. `chat_exchanges` holds every prompt and reply in
+full, along with which parts of any uploaded PDF the AI drew on, plus:
+
+| Column | Meaning |
+| --- | --- |
+| `model` | The exact model that answered (for the methods section) |
+| `stop_reason` | Why generation ended: `end_turn` (normal), `max_tokens` (cut off), `aborted` (participant pressed stop), `error`, or `empty` |
+| `input_tokens`, `output_tokens` | Size of what was sent to and received from the model |
+| `response_ms` | How long the model took, measured on the server |
+
+A prompt whose reply was stopped by the participant, or never arrived because
+the service failed, is still stored with an empty `bot_response`.
 
 ### `v_participant_week` — the summary table
 
-One row per participant per week, combining all of the above: time open, time
-away, editor versus chat time, keystrokes in each, prompts sent, average
-response wait, snapshot count, final word count, characters pasted in from the
-AI, external pastes, and submission time. This is the file to start from.
+One row per participant per week, combining all of the above: condition,
+progress state, time open, time away, editor versus chat time, keystrokes in
+each, prompts sent / answered / stopped, average response wait, tokens, snapshot
+count, final word count, characters pasted in from the AI, external pastes, and
+submission time. This is the file to start from. Only participant/memo pairs
+with some activity appear, so averages are over people who did the memo.
+
+`v_session_summary` gives the same core measures per sitting.
 
 ---
 

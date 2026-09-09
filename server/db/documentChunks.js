@@ -4,7 +4,7 @@ const { isValidId, toId, mapKeys, parseJson } = require("./helpers.js");
 const CHUNK_KEYS = {
     id: "id",
     attachment_id: "attachmentId",
-    chat_session_id: "chatSessionId",
+    chat_thread_id: "chatThreadId",
     assignment_id: "assignmentId",
     participant_id: "participantID",
     system_id: "systemID",
@@ -27,8 +27,8 @@ function mapChunk(row) {
     if (mapped.attachmentId != null) {
         mapped.attachmentId = String(mapped.attachmentId);
     }
-    if (mapped.chatSessionId != null) {
-        mapped.chatSessionId = String(mapped.chatSessionId);
+    if (mapped.chatThreadId != null) {
+        mapped.chatThreadId = String(mapped.chatThreadId);
     }
     if (mapped.chunkIndex != null) {
         mapped.chunkIndex = Number(mapped.chunkIndex);
@@ -43,26 +43,26 @@ function mapChunk(row) {
     return mapped;
 }
 
-async function findBySessionId(chatSessionId) {
-    if (!isValidId(chatSessionId)) {
+async function findByThreadId(chatThreadId) {
+    if (!isValidId(chatThreadId)) {
         return [];
     }
     const rows = await query(
         `SELECT * FROM document_chunks
-         WHERE chat_session_id = ?
+         WHERE chat_thread_id = ?
          ORDER BY chunk_index ASC`,
-        [toId(chatSessionId)]
+        [toId(chatThreadId)]
     );
     return rows.map(mapChunk);
 }
 
-async function countBySessionId(chatSessionId) {
-    if (!isValidId(chatSessionId)) {
+async function countByThreadId(chatThreadId) {
+    if (!isValidId(chatThreadId)) {
         return 0;
     }
     const rows = await query(
-        `SELECT COUNT(*) AS count FROM document_chunks WHERE chat_session_id = ?`,
-        [toId(chatSessionId)]
+        `SELECT COUNT(*) AS count FROM document_chunks WHERE chat_thread_id = ?`,
+        [toId(chatThreadId)]
     );
     return Number(rows[0]?.count || 0);
 }
@@ -76,13 +76,13 @@ async function insertMany(chunks) {
     for (const chunk of chunks) {
         const result = await query(
             `INSERT INTO document_chunks (
-                attachment_id, chat_session_id, assignment_id, participant_id,
+                attachment_id, chat_thread_id, assignment_id, participant_id,
                 system_id, chunk_index, text, source_filename, page_start, page_end,
                 embedding, embedding_model
              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
             [
                 toId(chunk.attachmentId),
-                toId(chunk.chatSessionId),
+                toId(chunk.chatThreadId),
                 chunk.assignmentId,
                 chunk.participantID,
                 chunk.systemID ?? null,
@@ -112,8 +112,8 @@ async function deleteByAttachmentId(attachmentId) {
 }
 
 module.exports = {
-    findBySessionId,
-    countBySessionId,
+    findByThreadId,
+    countByThreadId,
     insertMany,
     deleteByAttachmentId,
     mapChunk,

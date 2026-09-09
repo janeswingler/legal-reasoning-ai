@@ -13,18 +13,26 @@ const path = require("path");
 const mysql = require("mysql2/promise");
 
 const EXPORTS = [
+    // Summaries: one row per participant-memo, then one row per sitting.
     { name: "participant_week_summary", sql: "SELECT * FROM v_participant_week ORDER BY participant_id, assignment_id" },
+    { name: "session_summary", sql: "SELECT * FROM v_session_summary ORDER BY participant_id, assignment_id, started_at" },
+    // Event families with their details as plain columns.
+    { name: "typing_bursts", sql: "SELECT * FROM v_typing_bursts ORDER BY participant_id, assignment_id, client_ts, session_seq" },
+    { name: "heartbeats", sql: "SELECT * FROM v_heartbeats ORDER BY participant_id, assignment_id, client_ts, session_seq" },
+    { name: "attention", sql: "SELECT * FROM v_attention ORDER BY participant_id, assignment_id, client_ts, session_seq" },
+    { name: "chat_turns", sql: "SELECT * FROM v_chat_turns ORDER BY participant_id, assignment_id, timestamp" },
+    // Raw tables.
     { name: "study_sessions", sql: "SELECT * FROM study_sessions ORDER BY participant_id, started_at" },
     { name: "events", sql: "SELECT * FROM system_interactions ORDER BY participant_id, client_ts, session_seq" },
     { name: "clipboard_events", sql: "SELECT * FROM clipboard_events ORDER BY participant_id, client_ts" },
     { name: "assignments", sql: "SELECT * FROM assignments ORDER BY participant_id, assignment_id" },
-    { name: "chat_sessions", sql: "SELECT * FROM chat_sessions ORDER BY participant_id, created_at" },
+    { name: "chat_threads", sql: "SELECT * FROM chat_threads ORDER BY participant_id, created_at" },
     { name: "chat_exchanges", sql: "SELECT * FROM chat_exchanges ORDER BY participant_id, timestamp" },
     { name: "chat_attachments", sql: "SELECT * FROM chat_attachments ORDER BY participant_id, created_at" },
     // Snapshot bodies are large; the HTML is dropped and the plain text kept.
     {
         name: "editor_snapshots",
-        sql: `SELECT id, session_id, participant_id, assignment_id, system_id,
+        sql: `SELECT id, study_session_id, participant_id, assignment_id, system_id,
                      captured_at, client_ts, reason, char_count, word_count,
                      content_hash, keystrokes_since_prev, plain_text
               FROM editor_snapshots
@@ -32,12 +40,40 @@ const EXPORTS = [
     },
 ];
 
+// Every participant is in California, so the export shows Pacific time (with
+// the UTC offset attached so the value stays unambiguous across the DST change).
+const EXPORT_TIME_ZONE = "America/Los_Angeles";
+
+const localParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: EXPORT_TIME_ZONE,
+    hourCycle: "h23",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+});
+
+function formatLocalTimestamp(date) {
+    const p = Object.fromEntries(
+        localParts.formatToParts(date).map((part) => [part.type, part.value])
+    );
+    const ms = date.getMilliseconds();
+    const wallClockAsUtc = Date.UTC(+p.year, +p.month - 1, +p.day, +p.hour, +p.minute, +p.second);
+    const offsetMin = Math.round((wallClockAsUtc - (date.getTime() - ms)) / 60000);
+    const sign = offsetMin < 0 ? "-" : "+";
+    const abs = Math.abs(offsetMin);
+    const offset = `${sign}${String(Math.floor(abs / 60)).padStart(2, "0")}:${String(abs % 60).padStart(2, "0")}`;
+    return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}.${String(ms).padStart(3, "0")}${offset}`;
+}
+
 function toCsvValue(value) {
     if (value === null || value === undefined) {
         return "";
     }
     if (value instanceof Date) {
-        return value.toISOString();
+        return formatLocalTimestamp(value);
     }
     if (typeof value === "object") {
         return escapeCsv(JSON.stringify(value));
@@ -91,6 +127,9 @@ async function main() {
         user,
         password: process.env.MYSQL_PASSWORD || "",
         database,
+        // The app writes every timestamp as UTC; read them back the same way so
+        // the export does not shift with the time zone of the exporting machine.
+        timezone: "Z",
     });
 
     const outDir = resolveOutDir();

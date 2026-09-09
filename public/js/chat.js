@@ -1,7 +1,7 @@
 const chatLog = document.getElementById("chatLog");
 const chatForm = document.getElementById("chatForm");
 const chatInput = document.getElementById("chatInput");
-const chatSessionList = document.getElementById("chatSessionList");
+const chatThreadList = document.getElementById("chatThreadList");
 const newChatBtn = document.getElementById("newChatBtn");
 const chatComposerPending = document.getElementById("chatComposerPending");
 const chatComposerPendingList = document.getElementById("chatComposerPendingList");
@@ -41,10 +41,10 @@ const STOP_ICON_SVG = `<svg width="20" height="20" viewBox="0 0 24 24" fill="non
     <rect x="7" y="7" width="10" height="10" rx="1.5" fill="currentColor" />
 </svg>`;
 
-let currentChatSessionId = null;
+let currentChatThreadId = null;
 let pendingAttachments = [];
 /**
- * In-flight sends keyed by chat session id.
+ * In-flight sends keyed by chat thread id.
  * Each chat can generate independently (own abort + optimistic prompt).
  * @type {Map<string, {
  *   userText: string,
@@ -53,23 +53,23 @@ let pendingAttachments = [];
  *   streamAbortRequested: boolean
  * }>}
  */
-const pendingBySessionId = new Map();
+const pendingByThreadId = new Map();
 /** Ignores stale history responses when the student switches chats quickly. */
 let historyLoadToken = 0;
 
-function sameChatSessionId(a, b) {
+function sameChatThreadId(a, b) {
     return a != null && b != null && String(a) === String(b);
 }
 
-function sessionKey(id) {
+function threadKey(id) {
     return String(id);
 }
 
-function getPendingForSession(id) {
+function getPendingForThread(id) {
     if (id == null) {
         return null;
     }
-    return pendingBySessionId.get(sessionKey(id)) || null;
+    return pendingByThreadId.get(threadKey(id)) || null;
 }
 
 const PDF_ICON_SVG = `<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
@@ -193,33 +193,33 @@ function setPendingAttachments(attachments) {
     renderPendingAttachments();
 }
 
-function chatSessionStorageKey() {
-    return `lrai_chatSession_${config.memoId}`;
+function chatThreadStorageKey() {
+    return `lrai_chatThread_${config.memoId}`;
 }
 
-function getStoredChatSessionId() {
-    return localStorage.getItem(chatSessionStorageKey());
+function getStoredChatThreadId() {
+    return localStorage.getItem(chatThreadStorageKey());
 }
 
-function setStoredChatSessionId(id) {
+function setStoredChatThreadId(id) {
     if (id) {
-        localStorage.setItem(chatSessionStorageKey(), id);
+        localStorage.setItem(chatThreadStorageKey(), id);
     } else {
-        localStorage.removeItem(chatSessionStorageKey());
+        localStorage.removeItem(chatThreadStorageKey());
     }
 }
 
-function sessionCreatePayload() {
+function threadCreatePayload() {
     return {
         participantID: config.participantID,
         // Wire and database still say assignmentId / assignment_id.
         assignmentId: config.memoId,
-        sessionID: config.sessionID,
+        studySessionId: config.studySessionId,
         systemID: config.systemID,
     };
 }
 
-function sessionQuery() {
+function threadQuery() {
     return (
         `participantID=${encodeURIComponent(config.participantID)}` +
         `&assignmentId=${encodeURIComponent(config.memoId)}` +
@@ -229,7 +229,7 @@ function sessionQuery() {
 
 function chatInteractionProps(extra = {}) {
     return {
-        chatSessionId: currentChatSessionId,
+        chatThreadId: currentChatThreadId,
         ...extra,
     };
 }
@@ -435,49 +435,61 @@ function renderHistory(exchanges) {
 
     exchanges.forEach((exchange) => {
         appendMessage("user", exchange.userInput, exchange.attachmentIds);
-        appendMessage("assistant", exchange.botResponse);
+        if (exchange.botResponse) {
+            appendMessage("assistant", exchange.botResponse);
+        } else {
+            // Kept for the record but never answered: stopped, or the service
+            // failed. Show why the prompt has no reply under it.
+            const stopped = exchange.stopReason === "aborted";
+            appendMessage(
+                "assistant",
+                stopped
+                    ? "*Reply stopped before it finished.*"
+                    : "*No reply was received for this message.*"
+            );
+        }
     });
     scrollChatLogToBottom();
 }
 
-function setActiveSessionItem(chatSessionId) {
-    chatSessionList.querySelectorAll(".chat-sidebar__item").forEach((item) => {
-        item.classList.toggle("is-active", item.dataset.chatSessionId === chatSessionId);
+function setActiveThreadItem(chatThreadId) {
+    chatThreadList.querySelectorAll(".chat-sidebar__item").forEach((item) => {
+        item.classList.toggle("is-active", item.dataset.chatThreadId === chatThreadId);
     });
 }
 
-async function loadSessions() {
-    const response = await fetch(`/api/chat/sessions?${sessionQuery()}`);
+async function loadThreads() {
+    const response = await fetch(`/api/chat/threads?${threadQuery()}`);
     if (!response.ok) {
-        throw new Error("Could not load chat sessions");
+        throw new Error("Could not load chat threads");
     }
 
-    const { sessions } = await response.json();
-    chatSessionList.innerHTML = "";
+    const { threads } = await response.json();
+    chatThreadList.innerHTML = "";
 
-    sessions.forEach((session) => {
+    threads.forEach((thread) => {
         const item = document.createElement("button");
         item.type = "button";
         item.className = "chat-sidebar__item";
-        item.dataset.chatSessionId = session._id;
-        item.textContent = session.title || "New Chat";
-        item.addEventListener("click", () => selectSession(session._id));
-        chatSessionList.appendChild(item);
+        item.dataset.chatThreadId = thread._id;
+        item.textContent = thread.title || "New Chat";
+        item.addEventListener("click", () => selectThread(thread._id));
+        chatThreadList.appendChild(item);
     });
 
-    if (currentChatSessionId) {
-        setActiveSessionItem(currentChatSessionId);
+    if (currentChatThreadId) {
+        setActiveThreadItem(currentChatThreadId);
     }
 
-    return sessions;
+    return threads;
 }
 
 /**
  * Re-show the optimistic user bubble (+ typing dots) when returning to a chat
  * whose reply has not been saved yet. History only includes completed exchanges.
  */
-function restorePendingChatUi(chatSessionId) {
-    const pending = getPendingForSession(chatSessionId);
+function restorePendingChatUi(chatThreadId) {
+    const pending = getPendingForThread(chatThreadId);
     if (!pending) {
         return;
     }
@@ -487,10 +499,10 @@ function restorePendingChatUi(chatSessionId) {
     anchorLatestPromptInView(rowEl);
 }
 
-async function loadConversationHistory(chatSessionId) {
+async function loadConversationHistory(chatThreadId) {
     const token = ++historyLoadToken;
     const response = await fetch(
-        `/api/chat/sessions/${encodeURIComponent(chatSessionId)}/history?${sessionQuery()}`
+        `/api/chat/threads/${encodeURIComponent(chatThreadId)}/history?${threadQuery()}`
     );
 
     if (!response.ok) {
@@ -500,22 +512,22 @@ async function loadConversationHistory(chatSessionId) {
     const { exchanges } = await response.json();
 
     // Student may have switched away while this fetch was in flight.
-    if (token !== historyLoadToken || !sameChatSessionId(currentChatSessionId, chatSessionId)) {
+    if (token !== historyLoadToken || !sameChatThreadId(currentChatThreadId, chatThreadId)) {
         return;
     }
 
     renderHistory(exchanges);
-    restorePendingChatUi(chatSessionId);
+    restorePendingChatUi(chatThreadId);
 }
 
 async function loadPendingAttachments() {
-    if (!currentChatSessionId) {
+    if (!currentChatThreadId) {
         setPendingAttachments([]);
         return;
     }
 
     const response = await fetch(
-        `/api/chat/sessions/${encodeURIComponent(currentChatSessionId)}/attachments?${sessionQuery()}`
+        `/api/chat/threads/${encodeURIComponent(currentChatThreadId)}/attachments?${threadQuery()}`
     );
 
     if (!response.ok) {
@@ -528,10 +540,10 @@ async function loadPendingAttachments() {
 }
 
 async function removePendingAttachment(attachmentId) {
-    if (!currentChatSessionId) return;
+    if (!currentChatThreadId) return;
 
     const response = await fetch(
-        `/api/chat/sessions/${encodeURIComponent(currentChatSessionId)}/attachments/${encodeURIComponent(attachmentId)}?${sessionQuery()}`,
+        `/api/chat/threads/${encodeURIComponent(currentChatThreadId)}/attachments/${encodeURIComponent(attachmentId)}?${threadQuery()}`,
         { method: "DELETE" }
     );
 
@@ -557,14 +569,14 @@ async function uploadAttachment(file) {
     setAttachUploading(true);
 
     try {
-        const chatSessionId = await ensureChatSession();
+        const chatThreadId = await ensureChatThread();
         const formData = new FormData();
         formData.append("file", file);
         formData.append("participantID", config.participantID);
         formData.append("assignmentId", config.memoId);
 
         const response = await fetch(
-            `/api/chat/sessions/${encodeURIComponent(chatSessionId)}/attachments?${sessionQuery()}`,
+            `/api/chat/threads/${encodeURIComponent(chatThreadId)}/attachments?${threadQuery()}`,
             {
                 method: "POST",
                 body: formData,
@@ -595,59 +607,59 @@ async function uploadAttachment(file) {
     }
 }
 
-async function selectSession(chatSessionId) {
-    if (!sameChatSessionId(currentChatSessionId, chatSessionId)) {
+async function selectThread(chatThreadId) {
+    if (!sameChatThreadId(currentChatThreadId, chatThreadId)) {
         logEvent({
-            eventType: "chat_session_switch",
-            elementName: "chat-session",
+            eventType: "chat_thread_switch",
+            elementName: "chat-thread",
             page: "chat",
             eventProps: {
-                fromChatSessionId: currentChatSessionId,
-                toChatSessionId: chatSessionId,
+                fromChatThreadId: currentChatThreadId,
+                toChatThreadId: chatThreadId,
             },
         });
     }
 
-    currentChatSessionId = chatSessionId;
-    setStoredChatSessionId(chatSessionId);
-    setActiveSessionItem(chatSessionId);
-    await loadConversationHistory(chatSessionId);
+    currentChatThreadId = chatThreadId;
+    setStoredChatThreadId(chatThreadId);
+    setActiveThreadItem(chatThreadId);
+    await loadConversationHistory(chatThreadId);
     await loadPendingAttachments();
     updateSendButtonState();
 }
 
-async function createChatSession() {
-    const response = await fetch("/api/chat/sessions", {
+async function createChatThread() {
+    const response = await fetch("/api/chat/threads", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(sessionCreatePayload()),
+        body: JSON.stringify(threadCreatePayload()),
     });
 
     if (!response.ok) {
-        throw new Error("Could not create chat session");
+        throw new Error("Could not create chat thread");
     }
 
-    const { session } = await response.json();
-    currentChatSessionId = session._id;
-    setStoredChatSessionId(session._id);
-    await loadSessions();
-    setActiveSessionItem(session._id);
-    return session._id;
+    const { thread } = await response.json();
+    currentChatThreadId = thread._id;
+    setStoredChatThreadId(thread._id);
+    await loadThreads();
+    setActiveThreadItem(thread._id);
+    return thread._id;
 }
 
-async function ensureChatSession() {
-    if (currentChatSessionId) {
-        return currentChatSessionId;
+async function ensureChatThread() {
+    if (currentChatThreadId) {
+        return currentChatThreadId;
     }
-    return createChatSession();
+    return createChatThread();
 }
 
 function startNewChat() {
-    currentChatSessionId = null;
-    setStoredChatSessionId(null);
+    currentChatThreadId = null;
+    setStoredChatThreadId(null);
     showWelcomeMessage();
     setPendingAttachments([]);
-    chatSessionList.querySelectorAll(".chat-sidebar__item").forEach((item) => {
+    chatThreadList.querySelectorAll(".chat-sidebar__item").forEach((item) => {
         item.classList.remove("is-active");
     });
     updateSendButtonState();
@@ -660,20 +672,20 @@ function startNewChat() {
 
 async function initChat() {
     try {
-        const sessions = await loadSessions();
-        const savedChatSessionId = getStoredChatSessionId();
+        const threads = await loadThreads();
+        const savedChatThreadId = getStoredChatThreadId();
 
-        if (savedChatSessionId) {
-            const savedSession = sessions.find((session) => session._id === savedChatSessionId);
-            if (savedSession) {
-                await selectSession(savedChatSessionId);
+        if (savedChatThreadId) {
+            const savedThread = threads.find((thread) => thread._id === savedChatThreadId);
+            if (savedThread) {
+                await selectThread(savedChatThreadId);
                 return;
             }
-            setStoredChatSessionId(null);
+            setStoredChatThreadId(null);
         }
 
-        if (sessions.length > 0) {
-            await selectSession(sessions[0]._id);
+        if (threads.length > 0) {
+            await selectThread(threads[0]._id);
             return;
         }
 
@@ -684,12 +696,12 @@ async function initChat() {
 }
 
 /** True only when the open chat itself is generating a reply. */
-function isViewingGeneratingSession() {
-    return Boolean(getPendingForSession(currentChatSessionId));
+function isViewingGeneratingThread() {
+    return Boolean(getPendingForThread(currentChatThreadId));
 }
 
 function updateSendButtonState() {
-    if (isViewingGeneratingSession()) {
+    if (isViewingGeneratingThread()) {
         sendBtn.disabled = false;
         sendBtn.type = "button";
         sendBtn.classList.add("chat-composer__send--stop");
@@ -708,7 +720,7 @@ function updateSendButtonState() {
 }
 
 function stopChatGeneration() {
-    const pending = getPendingForSession(currentChatSessionId);
+    const pending = getPendingForThread(currentChatThreadId);
     if (!pending) {
         return;
     }
@@ -729,7 +741,7 @@ function resizeChatInput() {
 }
 
 sendBtn.addEventListener("click", (event) => {
-    if (!isViewingGeneratingSession()) return;
+    if (!isViewingGeneratingThread()) return;
     event.preventDefault();
     logEvent({
         eventType: "chat_stop",
@@ -744,7 +756,7 @@ chatForm.addEventListener("submit", async (event) => {
     event.preventDefault();
 
     // Only block if THIS chat is already generating — other chats stay independent.
-    if (isViewingGeneratingSession()) return;
+    if (isViewingGeneratingThread()) return;
 
     const text = chatInput.value.trim();
     if (!text) return;
@@ -761,14 +773,14 @@ chatForm.addEventListener("submit", async (event) => {
         },
     });
 
-    let requestSessionId = null;
+    let requestThreadId = null;
     const sendStartedAt = Date.now();
 
     try {
-        const chatSessionId = await ensureChatSession();
-        requestSessionId = chatSessionId;
+        const chatThreadId = await ensureChatThread();
+        requestThreadId = chatThreadId;
 
-        if (getPendingForSession(chatSessionId)) {
+        if (getPendingForThread(chatThreadId)) {
             return;
         }
 
@@ -781,7 +793,7 @@ chatForm.addEventListener("submit", async (event) => {
             abortController,
             streamAbortRequested: false,
         };
-        pendingBySessionId.set(sessionKey(chatSessionId), pending);
+        pendingByThreadId.set(threadKey(chatThreadId), pending);
         updateSendButtonState();
 
         const { rowEl: promptRowEl } = appendMessage("user", text, attachmentsForMessage);
@@ -797,8 +809,8 @@ chatForm.addEventListener("submit", async (event) => {
             signal: abortController.signal,
             body: JSON.stringify({
                 participantID: config.participantID,
-                sessionID: config.sessionID,
-                chatSessionId,
+                studySessionId: config.studySessionId,
+                chatThreadId,
                 systemID: config.systemID,
                 assignmentId: config.memoId,
                 userInput: text,
@@ -806,8 +818,8 @@ chatForm.addEventListener("submit", async (event) => {
             }),
         });
 
-        const viewingRequestSession = sameChatSessionId(currentChatSessionId, requestSessionId);
-        if (viewingRequestSession) {
+        const viewingRequestThread = sameChatThreadId(currentChatThreadId, requestThreadId);
+        if (viewingRequestThread) {
             hideTypingIndicator();
         }
 
@@ -816,10 +828,10 @@ chatForm.addEventListener("submit", async (event) => {
             if (response.status === 503) {
                 errorText = "Chat is not configured yet. Please contact the study administrator.";
             }
-            if (viewingRequestSession) {
+            if (viewingRequestThread) {
                 appendMessage("assistant", errorText);
             }
-            if (viewingRequestSession) {
+            if (viewingRequestThread) {
                 await loadPendingAttachments();
             }
             return;
@@ -834,7 +846,7 @@ chatForm.addEventListener("submit", async (event) => {
             valueNum: Date.now() - sendStartedAt,
             durationMs: Date.now() - sendStartedAt,
             eventProps: {
-                chatSessionId: requestSessionId,
+                chatThreadId: requestThreadId,
                 responseChars: (exchange.botResponse || "").length,
                 attachmentCount: attachmentIds.length,
                 retrievedChunks: exchange.retrievedChunkIds?.length ?? 0,
@@ -847,39 +859,39 @@ chatForm.addEventListener("submit", async (event) => {
 
         // Only paint into the open thread. If the student is elsewhere, the
         // exchange is already saved and will appear when they open this chat.
-        if (sameChatSessionId(currentChatSessionId, requestSessionId)) {
+        if (sameChatThreadId(currentChatThreadId, requestThreadId)) {
             await appendAssistantMessageAnimated(exchange.botResponse, pending);
 
             // Land at the end of the reply so it reads as finished.
-            if (sameChatSessionId(currentChatSessionId, requestSessionId)) {
+            if (sameChatThreadId(currentChatThreadId, requestThreadId)) {
                 scrollChatLogToBottom();
             }
         }
-        await loadSessions();
+        await loadThreads();
     } catch (error) {
-        const viewingRequestSession = sameChatSessionId(currentChatSessionId, requestSessionId);
-        if (viewingRequestSession) {
+        const viewingRequestThread = sameChatThreadId(currentChatThreadId, requestThreadId);
+        if (viewingRequestThread) {
             hideTypingIndicator();
         }
         if (error?.name === "AbortError") {
             // Stop cancels before the exchange is saved — drop the optimistic bubble.
-            if (viewingRequestSession && requestSessionId != null) {
-                await loadConversationHistory(requestSessionId).catch(() => {
+            if (viewingRequestThread && requestThreadId != null) {
+                await loadConversationHistory(requestThreadId).catch(() => {
                     showWelcomeMessage();
                 });
             }
             return;
         }
-        if (viewingRequestSession) {
+        if (viewingRequestThread) {
             appendMessage("assistant", "Sorry, something went wrong.");
             await loadPendingAttachments();
         }
     } finally {
-        if (requestSessionId != null) {
-            pendingBySessionId.delete(sessionKey(requestSessionId));
+        if (requestThreadId != null) {
+            pendingByThreadId.delete(threadKey(requestThreadId));
         }
         updateSendButtonState();
-        if (sameChatSessionId(currentChatSessionId, requestSessionId)) {
+        if (sameChatThreadId(currentChatThreadId, requestThreadId)) {
             chatInput.focus();
         }
     }
@@ -893,7 +905,7 @@ chatInput.addEventListener("input", () => {
 chatInput.addEventListener("keydown", (event) => {
     if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
-        if (isViewingGeneratingSession() || sendBtn.disabled) return;
+        if (isViewingGeneratingThread() || sendBtn.disabled) return;
         chatForm.requestSubmit();
     }
 });

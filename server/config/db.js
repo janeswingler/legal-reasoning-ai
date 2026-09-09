@@ -23,12 +23,21 @@ function getPoolConfig() {
         connectionLimit: Number(process.env.MYSQL_CONNECTION_LIMIT || 10),
         namedPlaceholders: false,
         dateStrings: false,
+        // DATETIME has no zone. Every JS Date is written and read as UTC so the
+        // export is identical no matter where the app or the analyst's machine
+        // is, and so rows the app writes agree with rows the DB stamps itself.
+        timezone: "Z",
     };
 }
 
 function getPool() {
     if (!pool) {
         pool = mysql.createPool(getPoolConfig());
+        // Columns defaulting to CURRENT_TIMESTAMP use the session zone, which
+        // would otherwise be whatever the database server happens to run in.
+        pool.on("connection", (connection) => {
+            connection.query("SET time_zone = '+00:00'");
+        });
     }
     return pool;
 }

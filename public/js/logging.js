@@ -13,21 +13,25 @@ const MAX_QUEUE_LENGTH = 500;
 // The sequence counter must keep climbing across reloads. A reload keeps the
 // same sessionStorage session id, so restarting at 1 would collide with the
 // rows already written and the server would discard the new events as
-// duplicates - silent data loss for the rest of the sitting.
-const SEQ_STORAGE_KEY = "lrai_telemetrySeq";
+// duplicates - silent data loss for the rest of the sitting. Keyed by session
+// id so a new sitting in the same tab starts back at 1.
+const SEQ_STORAGE_KEY = `lrai_telemetrySeq:${config.studySessionId}`;
 
 const telemetryQueue = [];
 let sessionSeq = Number(sessionStorage.getItem(SEQ_STORAGE_KEY) || 0) || 0;
 let flushTimer = null;
 let flushInFlight = false;
 let sessionClosed = false;
+// Clipboard posts go out one at a time so a paste is never classified before
+// the copy it came from has been recorded.
+let clipboardChain = Promise.resolve();
 
 function identityPayload() {
     return {
         participantID: config.participantID,
         // Wire and database still say assignmentId / assignment_id.
         assignmentId: config.memoId,
-        sessionID: config.sessionID,
+        studySessionId: config.studySessionId,
         systemID: config.systemID,
     };
 }
@@ -54,6 +58,13 @@ function logEvent({
     durationMs = null,
     eventProps = {},
 }) {
+    // After the close beacon nothing can be delivered (the browser fires a
+    // final visibilitychange after pagehide). Taking a sequence number for it
+    // would leave a gap that looks like a lost event.
+    if (sessionClosed) {
+        return;
+    }
+
     sessionSeq += 1;
     try {
         sessionStorage.setItem(SEQ_STORAGE_KEY, String(sessionSeq));
@@ -82,11 +93,6 @@ function logEvent({
     } else {
         scheduleFlush();
     }
-}
-
-// Kept so any cached page or unconverted caller keeps working.
-function logSystemInteraction({ eventType, elementName, page, eventProps = {} }) {
-    logEvent({ eventType, elementName, page, eventProps });
 }
 
 function scheduleFlush() {
@@ -187,22 +193,41 @@ function endTelemetrySession(reason) {
     }
 }
 
-function postClipboardEvent({ action, surface, content, chatSessionId = null }) {
-    postJson("/api/telemetry/clipboard", {
+/**
+ * The page came back from the browser's back-forward cache after pagehide had
+ * already closed the sitting. Reopen it so the rest of the visit is recorded.
+ */
+function reopenTelemetrySession() {
+    if (!sessionClosed) {
+        return Promise.resolve();
+    }
+    sessionClosed = false;
+    return startTelemetrySession().then(() => {
+        if (telemetryQueue.length > 0) {
+            scheduleFlush();
+        }
+    });
+}
+
+function postClipboardEvent({ action, surface, content, chatThreadId = null }) {
+    const payload = {
         ...identityPayload(),
         action,
         surface,
         content,
-        chatSessionId,
+        chatThreadId,
         clientTs: new Date().toISOString(),
-    }).catch(() => {});
+    };
+    clipboardChain = clipboardChain
+        .then(() => postJson("/api/telemetry/clipboard", payload))
+        .catch(() => {});
+    return clipboardChain;
 }
 
-function postEditorSnapshot({ contentHtml, plainText, reason, keystrokesSincePrev = null }) {
+function postEditorSnapshot({ contentHtml, reason, keystrokesSincePrev = null }) {
     return postJson("/api/telemetry/snapshot", {
         ...identityPayload(),
         contentHtml,
-        plainText,
         reason,
         keystrokesSincePrev,
         clientTs: new Date().toISOString(),

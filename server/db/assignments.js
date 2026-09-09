@@ -4,7 +4,7 @@ const { isValidId, toId, mapKeys } = require("./helpers.js");
 const ASSIGNMENT_KEYS = {
     id: "id",
     participant_id: "participantID",
-    session_id: "sessionID",
+    study_session_id: "studySessionId",
     system_id: "systemID",
     assignment_id: "assignmentId",
     title: "title",
@@ -27,16 +27,6 @@ function mapAssignment(row) {
         mapped.version = Number(mapped.version);
     }
     return mapped;
-}
-
-async function findByParticipant(participantID) {
-    const rows = await query(
-        `SELECT * FROM assignments
-         WHERE participant_id = ?
-         ORDER BY timestamp DESC`,
-        [participantID]
-    );
-    return rows.map(mapAssignment);
 }
 
 async function findByParticipantAndAssignment(participantID, assignmentId) {
@@ -62,14 +52,14 @@ async function findById(id) {
 async function create(data) {
     const result = await query(
         `INSERT INTO assignments (
-            participant_id, session_id, system_id, assignment_id,
+            participant_id, study_session_id, system_id, assignment_id,
             title, content, version, timestamp,
             submitted_at, questionnaire_completed_at,
             drive_file_id, drive_file_name, local_file_path
          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
             data.participantID ?? null,
-            data.sessionID ?? null,
+            data.studySessionId ?? null,
             data.systemID ?? null,
             data.assignmentId,
             data.title ?? null,
@@ -88,57 +78,81 @@ async function create(data) {
     return findById(result.insertId);
 }
 
+const UPDATABLE_COLUMNS = {
+    studySessionId: "study_session_id",
+    systemID: "system_id",
+    title: "title",
+    content: "content",
+    submittedAt: "submitted_at",
+    questionnaireCompletedAt: "questionnaire_completed_at",
+    driveFileId: "drive_file_id",
+    driveFileName: "drive_file_name",
+    localFilePath: "local_file_path",
+};
+
+const DATE_FIELDS = new Set(["submittedAt", "questionnaireCompletedAt"]);
+
+/**
+ * Only the supplied fields are written. Rewriting every column from an earlier
+ * read would let a submit or questionnaire stamp silently put back a draft
+ * that an autosave had replaced in the meantime.
+ */
+function buildSetClause(fields) {
+    const assignments = [];
+    const params = [];
+
+    for (const [field, column] of Object.entries(UPDATABLE_COLUMNS)) {
+        if (fields[field] === undefined) {
+            continue;
+        }
+        let value = fields[field];
+        if (DATE_FIELDS.has(field)) {
+            value = value ? new Date(value) : null;
+        }
+        assignments.push(`${column} = ?`);
+        params.push(value ?? null);
+    }
+
+    assignments.push("version = version + 1", "timestamp = ?");
+    params.push(new Date());
+
+    return { sql: assignments.join(", "), params };
+}
+
 async function updateById(id, fields) {
-    const assignment = await findById(id);
-    if (!assignment) {
+    if (!isValidId(id)) {
         return null;
     }
 
-    const next = {
-        ...assignment,
-        ...fields,
-        version:
-            fields.version !== undefined ? fields.version : assignment.version + 1,
-        timestamp: fields.timestamp ? new Date(fields.timestamp) : new Date(),
-    };
-
-    await query(
-        `UPDATE assignments SET
-            participant_id = ?,
-            session_id = ?,
-            system_id = ?,
-            assignment_id = ?,
-            title = ?,
-            content = ?,
-            version = ?,
-            timestamp = ?,
-            submitted_at = ?,
-            questionnaire_completed_at = ?,
-            drive_file_id = ?,
-            drive_file_name = ?,
-            local_file_path = ?
-         WHERE id = ?`,
-        [
-            next.participantID ?? null,
-            next.sessionID ?? null,
-            next.systemID ?? null,
-            next.assignmentId,
-            next.title ?? null,
-            next.content ?? null,
-            next.version,
-            next.timestamp,
-            next.submittedAt ? new Date(next.submittedAt) : null,
-            next.questionnaireCompletedAt
-                ? new Date(next.questionnaireCompletedAt)
-                : null,
-            next.driveFileId ?? null,
-            next.driveFileName ?? null,
-            next.localFilePath ?? null,
-            toId(id),
-        ]
-    );
+    const { sql, params } = buildSetClause(fields);
+    await query(`UPDATE assignments SET ${sql} WHERE id = ?`, [...params, toId(id)]);
 
     return findById(id);
+}
+
+/**
+ * Same write as updateById, but only applies if the row's version still
+ * matches expectedVersion — the compare-and-swap that stops one autosave
+ * from silently overwriting a newer save from another tab or device. A
+ * submitted row is never touched, whatever the version says.
+ */
+async function updateWithVersionCheck(id, fields, expectedVersion) {
+    if (!isValidId(id)) {
+        return { ok: false, reason: "not_found" };
+    }
+
+    const { sql, params } = buildSetClause(fields);
+    const result = await query(
+        `UPDATE assignments SET ${sql}
+         WHERE id = ? AND version = ? AND submitted_at IS NULL`,
+        [...params, toId(id), Number(expectedVersion)]
+    );
+
+    if (result.affectedRows === 0) {
+        return { ok: false, reason: "conflict" };
+    }
+
+    return { ok: true, assignment: await findById(id) };
 }
 
 async function upsertCurrent(data) {
@@ -148,32 +162,65 @@ async function upsertCurrent(data) {
     );
 
     if (existing) {
+        // No expectedVersion means the caller never loaded existing content
+        // (shouldn't happen once the client is updated, but falls back to
+        // the old unconditional write rather than refusing to save).
+        if (data.expectedVersion == null) {
+            return {
+                assignment: await updateById(existing.id, {
+                    studySessionId: data.studySessionId,
+                    systemID: data.systemID,
+                    content: data.content,
+                    title: data.title,
+                }),
+                created: false,
+                conflict: false,
+            };
+        }
+
+        const result = await updateWithVersionCheck(
+            existing.id,
+            {
+                studySessionId: data.studySessionId,
+                systemID: data.systemID,
+                content: data.content,
+                title: data.title,
+            },
+            data.expectedVersion
+        );
+
+        if (!result.ok) {
+            return { assignment: null, created: false, conflict: true };
+        }
+
+        return { assignment: result.assignment, created: false, conflict: false };
+    }
+
+    try {
         return {
-            assignment: await updateById(existing.id, {
-                sessionID: data.sessionID,
+            assignment: await create({
+                participantID: data.participantID,
+                assignmentId: data.assignmentId,
+                studySessionId: data.studySessionId,
                 systemID: data.systemID,
                 content: data.content,
                 title: data.title,
             }),
-            created: false,
+            created: true,
+            conflict: false,
         };
+    } catch (error) {
+        // Two tabs opened a brand-new memo at once and both tried to create
+        // the row. The loser has no version to check against, so it is told to
+        // reload rather than overwrite whatever the winner wrote.
+        if (error.code === "ER_DUP_ENTRY") {
+            return { assignment: null, created: false, conflict: true };
+        }
+        throw error;
     }
-
-    return {
-        assignment: await create({
-            participantID: data.participantID,
-            assignmentId: data.assignmentId,
-            sessionID: data.sessionID,
-            systemID: data.systemID,
-            content: data.content,
-            title: data.title,
-        }),
-        created: true,
-    };
 }
 
 module.exports = {
-    findByParticipant,
     findByParticipantAndAssignment,
     findById,
     create,

@@ -148,6 +148,24 @@ body.is-writing-locked .pleading-editor {
   cursor: not-allowed;
 }
 
+/* Once the memo is submitted, this same button turns into "Proceed to
+   Survey" -- blue instead of black so it reads as the next step rather than
+   a repeat of submit. */
+.note-submit-btn--survey {
+  gap: 0.4rem;
+  border-color: #2f5fd1;
+  background: #2f5fd1;
+}
+
+.note-submit-btn--survey:hover {
+  background: #24499f;
+  border-color: #24499f;
+}
+
+.note-submit-btn__icon {
+  flex-shrink: 0;
+}
+
 .note-export-pdf-btn {
   display: inline-flex;
   align-items: center;

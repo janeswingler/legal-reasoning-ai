@@ -11,6 +11,10 @@ const {
     findAssignmentState,
     buildStateRedirect,
 } = require("../services/assignmentState.js");
+const {
+    isMemoOpen,
+    getAssignedDateDisplay,
+} = require("../services/memoAssignedDates.js");
 
 const router = express.Router();
 
@@ -31,6 +35,14 @@ router.post("/verify", async (req, res) => {
     if (!memoNumber) {
         return res.status(400).json({
             error: `Memo ID must be a number from 1 to ${MEMO_COUNT}`,
+        });
+    }
+
+    // Checked before the participant lookup: whether the memo is open yet has
+    // nothing to do with who is asking.
+    if (!isMemoOpen(memoNumber)) {
+        return res.status(400).json({
+            error: `Memo ${memoNumber} is not open yet. It opens ${getAssignedDateDisplay(memoNumber)}.`,
         });
     }
 

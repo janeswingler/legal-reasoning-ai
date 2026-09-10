@@ -1,4 +1,4 @@
-const MEMO_COUNT = 8;
+const MEMO_COUNT = 6;
 
 function extractIdNumber(raw) {
     const digits = String(raw ?? "").match(/\d+/);

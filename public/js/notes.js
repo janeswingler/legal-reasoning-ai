@@ -338,10 +338,45 @@ function lockWriting() {
     noteToolbar?.querySelectorAll("button").forEach((button) => {
         button.disabled = true;
     });
+}
 
-    if (submitMemoBtn) {
-        submitMemoBtn.disabled = true;
+const SUBMIT_BUTTON_ARROW_ICON =
+    '<svg class="note-submit-btn__icon" width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">' +
+    '<path d="M3 7h8M8 3.5L11.5 7 8 10.5" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" />' +
+    "</svg>";
+
+/**
+ * The submit button becomes the way back to the survey once writing is
+ * locked, so someone who dismissed the post-submit overlay ("I'll do it
+ * later") always has a visible next step without closing the browser and
+ * reopening the assignment link.
+ */
+function updateSubmitButtonForState() {
+    if (!submitMemoBtn) {
+        return;
     }
+
+    if (assignmentState === "questionnaire") {
+        submitMemoBtn.disabled = false;
+        submitMemoBtn.classList.add("note-submit-btn--survey");
+        submitMemoBtn.setAttribute("aria-label", "Proceed to the post-task survey");
+        submitMemoBtn.title = "Proceed to the post-task survey";
+        submitMemoBtn.innerHTML = `Proceed to Survey ${SUBMIT_BUTTON_ARROW_ICON}`;
+        return;
+    }
+
+    submitMemoBtn.classList.remove("note-submit-btn--survey");
+
+    if (assignmentState === "complete") {
+        submitMemoBtn.disabled = true;
+        submitMemoBtn.textContent = "Completed";
+        return;
+    }
+
+    submitMemoBtn.disabled = false;
+    submitMemoBtn.setAttribute("aria-label", "Submit memo");
+    submitMemoBtn.title = "Submit memo";
+    submitMemoBtn.textContent = "Submit";
 }
 
 function applyAssignmentState(state) {
@@ -354,6 +389,8 @@ function applyAssignmentState(state) {
             isWritingLocked()
         );
     }
+
+    updateSubmitButtonForState();
 
     if (isWritingLocked()) {
         lockWriting();
@@ -399,10 +436,10 @@ function closeSubmitComplete() {
     document.body.classList.remove("is-submit-complete");
 }
 
-function continueToQuestionnaire() {
+function continueToQuestionnaire(elementName) {
     logEvent({
         eventType: "qualtrics_continue",
-        elementName: "Continue to Questionnaire",
+        elementName,
         page: "assignment",
         eventProps: { memoId: config.memoId },
     });
@@ -662,6 +699,10 @@ function bindToolbar() {
 
     submitMemoBtn.addEventListener("click", (event) => {
         event.preventDefault();
+        if (assignmentState === "questionnaire") {
+            continueToQuestionnaire("Proceed to Survey (Submit Button)");
+            return;
+        }
         requestSubmit();
     });
 
@@ -691,7 +732,7 @@ function bindToolbar() {
     });
 
     submitCompleteContinue?.addEventListener("click", () => {
-        continueToQuestionnaire();
+        continueToQuestionnaire("Continue to Questionnaire");
     });
 
     // Escape backs out of the pre-submit question only. The post-submit screen

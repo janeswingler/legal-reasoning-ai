@@ -253,8 +253,8 @@
   background: var(--bubble-user);
   color: var(--text);
   border: none;
-  border-radius: var(--radius-pill);
-  border-bottom-right-radius: 10px;
+  border-radius: var(--radius);
+  border-bottom-right-radius: 6px;
   box-shadow: none;
   font-family: var(--font-sans);
 }

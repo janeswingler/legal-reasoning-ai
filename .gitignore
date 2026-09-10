@@ -22,6 +22,7 @@ tmp-*
 
 # Study data exports contain participant text - never commit
 exports/
+analysis/
 
 # Claude Code local settings
 .claude/

@@ -80,3 +80,21 @@ document.body.classList.add(isAiEnabled ? "system-2" : "system-1");
 document.querySelectorAll("[data-memo-title]").forEach((element) => {
     element.textContent = config.memoTitle;
 });
+
+// The due date mapping lives on the server so it has git history like the
+// rest of the study design; the placeholder text stays put if the lookup
+// fails or the memo has no due date on file.
+fetch(
+    `/api/assignments/due-date?participantID=${encodeURIComponent(participantID)}` +
+        `&assignmentId=${encodeURIComponent(memoId)}`
+)
+    .then((response) => (response.ok ? response.json() : null))
+    .then((data) => {
+        if (!data?.dueDate) {
+            return;
+        }
+        document.querySelectorAll("[data-memo-due]").forEach((element) => {
+            element.textContent = data.dueDate;
+        });
+    })
+    .catch(() => {});

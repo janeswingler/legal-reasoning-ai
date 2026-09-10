@@ -11,6 +11,7 @@ const { closeBrowser, warmUp } = require("./server/services/pdfGenerator.js");
 const assignmentsDb = require("./server/db/assignments.js");
 const { sanitizeId } = require("./server/services/studyIdentifiers.js");
 const { resolveMemoNumber } = require("./server/services/studyRouting.js");
+const { isMemoOpen } = require("./server/services/memoAssignedDates.js");
 const {
     loadParticipantConditions,
     getSystemId,
@@ -75,6 +76,10 @@ app.get("/app.html", async (req, res, next) => {
 
     const memoNumber = resolveMemoNumber(req.query.memoID ?? req.query.assignment);
     if (!memoNumber) {
+        return res.redirect(302, "/");
+    }
+
+    if (!isMemoOpen(memoNumber)) {
         return res.redirect(302, "/");
     }
 

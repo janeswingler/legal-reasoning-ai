@@ -5,7 +5,7 @@
  * condition mapping, and reaches the browser as a validated systemID in the
  * URL. Nothing here computes it.
  */
-const MEMO_COUNT = 8;
+const MEMO_COUNT = 6;
 
 function resolveMemoNumber(raw) {
     const digits = String(raw ?? "").match(/\d+/);

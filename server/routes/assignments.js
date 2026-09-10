@@ -14,6 +14,7 @@ const {
 } = require("../services/submissionStorage.js");
 const { renderPleadingPdf } = require("../services/pdfGenerator.js");
 const { resolveAssignmentState } = require("../services/assignmentState.js");
+const { getDueDateForMemo } = require("../services/memoDueDates.js");
 const {
     attachStudyIdentity,
     IDENTITY_ERROR_MESSAGE,
@@ -66,6 +67,14 @@ function getSubmissionNotConfiguredMessage() {
         "Or set SUBMISSION_STORAGE=local in .env to save PDFs on the server."
     );
 }
+
+router.get("/due-date", (req, res) => {
+    if (!req.study) {
+        return res.status(400).json({ error: IDENTITY_REQUIRED_MESSAGE });
+    }
+
+    res.json({ dueDate: getDueDateForMemo(req.study.memoNumber) });
+});
 
 router.get("/current", async (req, res) => {
     try {

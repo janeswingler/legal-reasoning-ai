@@ -1,6 +1,7 @@
 const { sanitizeId } = require("../services/studyIdentifiers.js");
 const { resolveMemoNumber, toMemoId } = require("../services/studyRouting.js");
 const { getSystemId } = require("../services/participantConditions.js");
+const { isMemoOpen } = require("../services/memoAssignedDates.js");
 
 const IDENTITY_ERROR_MESSAGE =
     "Participant ID or memo is not recognized. Reopen your assignment link and try again.";
@@ -22,6 +23,10 @@ function resolveStudyIdentity(rawParticipantID, rawAssignmentId) {
     // stored under two different keys.
     if (!memoId || String(rawAssignmentId).trim() !== memoId) {
         throw new Error("Memo ID is not valid");
+    }
+
+    if (!isMemoOpen(memoNumber)) {
+        throw new Error("This memo is not open yet");
     }
 
     const systemID = getSystemId(participantID, memoNumber);

@@ -891,11 +891,32 @@ chatForm.addEventListener("submit", async (event) => {
             pendingByThreadId.delete(threadKey(requestThreadId));
         }
         updateSendButtonState();
-        if (sameChatThreadId(currentChatThreadId, requestThreadId)) {
+        // Hand the cursor back to the message box only if the student is
+        // still in the chat. A reply can take a while, and if they have gone
+        // on writing in the editor meanwhile, pulling focus away from it
+        // would interrupt their typing.
+        if (
+            sameChatThreadId(currentChatThreadId, requestThreadId) &&
+            focusIsFreeForChat()
+        ) {
             chatInput.focus();
         }
     }
 });
+
+/**
+ * True when nothing else is being typed into: focus is on the page body, or
+ * already somewhere inside the chat pane. False whenever the student is in
+ * the editor or any other control outside the chat.
+ */
+function focusIsFreeForChat() {
+    const active = document.activeElement;
+    if (!active || active === document.body) {
+        return true;
+    }
+    const chatPane = document.querySelector(".panel-chat");
+    return Boolean(chatPane && chatPane.contains(active));
+}
 
 chatInput.addEventListener("input", () => {
     resizeChatInput();

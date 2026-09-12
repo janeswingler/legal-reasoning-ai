@@ -3,6 +3,7 @@ const systemInteractionsDb = require("../db/systemInteractions.js");
 const studySessionsDb = require("../db/studySessions.js");
 const editorSnapshotsDb = require("../db/editorSnapshots.js");
 const clipboardEventsDb = require("../db/clipboardEvents.js");
+const assignmentsDb = require("../db/assignments.js");
 
 const router = express.Router();
 
@@ -119,6 +120,17 @@ router.post("/snapshot", async (req, res) => {
         const identity = readIdentity(req);
         if (!requireIdentity(identity)) {
             return res.status(400).json({ error: IDENTITY_REQUIRED_MESSAGE });
+        }
+
+        // The revision history ends at submission. A page that reaches the
+        // editor afterwards (a cached copy on a Back navigation, say) must not
+        // append an empty or stale revision that would become the "final" one.
+        const assignment = await assignmentsDb.findByParticipantAndAssignment(
+            identity.participantID,
+            identity.assignmentId
+        );
+        if (assignment?.submittedAt) {
+            return res.status(200).json({ skipped: true, reason: "submitted", snapshot: null });
         }
 
         const result = await editorSnapshotsDb.create({

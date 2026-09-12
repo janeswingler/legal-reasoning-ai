@@ -127,7 +127,19 @@ app.use("/api/chat", chatRoutes);
 app.use("/api/telemetry", telemetryRoutes);
 app.use("/api/auth/google", googleAuthRoutes);
 
-app.use(express.static(path.join(__dirname, "public")));
+app.use(
+    express.static(path.join(__dirname, "public"), {
+        setHeaders(res, filePath) {
+            // The editor page must always come from the server, because the
+            // route above is what sends a submitted memo to the questionnaire
+            // instead. A Back navigation from Qualtrics would otherwise reuse
+            // the browser's cached copy and reopen the editor.
+            if (filePath.endsWith("app.html")) {
+                res.setHeader("Cache-Control", "no-store");
+            }
+        },
+    })
+);
 
 async function start() {
     // Before anything else: a broken mapping would route participants into the

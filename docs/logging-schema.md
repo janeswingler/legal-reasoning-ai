@@ -72,6 +72,23 @@ This writes a folder of CSV files that open directly in Excel, R or SPSS.
 The first six are produced by database *views* — saved queries that unpack the
 per-event details into plain columns — so nothing in them needs parsing.
 
+Two Python scripts (they need `pandas`; `scipy` is optional) take it from there:
+
+```
+python scripts/check-export.py analysis/<export folder>
+python scripts/build-memo-table.py analysis/<export folder>
+```
+
+The first checks an export for problems: every file loads, timestamps are
+Pacific, conditions match the mapping, no-AI weeks have no chat activity, and
+each summary number agrees with the raw records it was computed from. The
+second writes `memo_level.csv`, one row for every scheduled student-memo pair
+with group, condition, due date, lateness, and every engagement measure, and
+merges in `grades.csv` (rubric scores) and `qualtrics.csv` (survey and quiz
+scores) if those are placed in the same folder with `participant_id` and
+`memo_number` columns. That single table is the one every analysis runs from.
+Test participants (ids 20001–20020) are excluded from it.
+
 ---
 
 ## Table by table

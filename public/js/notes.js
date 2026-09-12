@@ -990,8 +990,12 @@ async function initNote() {
     } finally {
         isInitializing = false;
         // Baseline revision for this sitting. Deduped server-side, so reopening
-        // without editing does not add a row.
-        window.captureEditorSnapshot?.("load", { force: true });
+        // without editing does not add a row. Skipped when the draft never
+        // loaded (the editor is empty, not the memo) and once the memo is
+        // submitted (the revision history ended at submission).
+        if (!saveBlocked && !isWritingLocked()) {
+            window.captureEditorSnapshot?.("load", { force: true });
+        }
     }
 }
 

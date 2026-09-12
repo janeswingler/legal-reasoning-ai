@@ -115,6 +115,7 @@ number the event is about).
 | `submit_confirm_open` / `submit_confirm_cancel` | Opened the "are you sure?" dialog before submitting, or backed out of it | — |
 | `submit` / `export_pdf` | Submitted or downloaded the assignment | Length of the document |
 | `qualtrics_continue` / `qualtrics_defer` | After submitting, went on to the questionnaire now or chose to do it later | — |
+| `connection_lost` / `connection_restored` | The draft stopped saving (details give the reason: the browser reported it was offline, a save got no answer or an error, or the memo could not be loaded) and when saving worked again. A red banner is shown to the participant in between | — |
 | `split_resize` | Dragged the divider between chat and editor | Proportion given to the chat |
 | `viewport_resize` | Resized the window | — |
 | `sidebar_toggle` | Showed or hid the conversation list | — |

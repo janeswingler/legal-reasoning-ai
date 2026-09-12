@@ -9,7 +9,7 @@
         <link rel="stylesheet" href="./css/reset.css" />
         <link rel="stylesheet" href="./css/layout.css?v=20260821d" />
         <link rel="stylesheet" href="./css/chat.css?v=20260821a" />
-        <link rel="stylesheet" href="./css/notes.css?v=20260827a" />
+        <link rel="stylesheet" href="./css/notes.css?v=20260912a" />
         <link rel="stylesheet" href="./css/screen-gate.css?v=20260812a" />
 
     </head>
@@ -38,6 +38,10 @@
                 );
             })();
         </script>
+        <div id="connectionWarning" class="connection-warning" hidden role="alert" aria-live="assertive">
+            <span class="connection-warning__icon" aria-hidden="true">!</span>
+            <span id="connectionWarningText" class="connection-warning__text"></span>
+        </div>
         <main class="app-main">
             <section class="panel panel-chat" aria-label="Chat panel">
                 <div class="chat-layout" id="chatLayout">
@@ -428,7 +432,7 @@
         <script src="./js/logging.js?v=20260908b"></script>
         <script src="./js/split-pane.js?v=20260821a"></script>
         <script src="./js/chat.js?v=20260908b"></script>
-        <script src="./js/notes.js?v=20260908b"></script>
+        <script src="./js/notes.js?v=20260912a"></script>
         <!-- Last: attaches to the editor and chat once both exist. -->
         <script src="./js/instrumentation.js?v=20260908b"></script>
     </body>

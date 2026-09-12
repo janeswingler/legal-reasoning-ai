@@ -10,7 +10,7 @@ const mysql = require("mysql2/promise");
 
 const BASE = process.env.SMOKE_BASE_URL || "http://localhost:3000";
 const PARTICIPANT = "20";
-const ASSIGNMENT = "memo-07";
+const ASSIGNMENT = "memo-05";
 
 async function req(method, path, body) {
     const response = await fetch(`${BASE}${path}`, {
@@ -96,10 +96,10 @@ async function main() {
             null,
             403
         );
-        // Participant 20's memo 8 is NoAI, so the chat API is closed for it.
+        // Participant 20's memo 6 is NoAI, so the chat API is closed for it.
         await expectStatus(
             "GET",
-            `/api/chat/threads?participantID=${PARTICIPANT}&assignmentId=memo-08`,
+            `/api/chat/threads?participantID=${PARTICIPANT}&assignmentId=memo-06`,
             null,
             403
         );

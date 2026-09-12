@@ -100,11 +100,14 @@ number the event is about).
 | --- | --- | --- |
 | `session_start` | App opened. `isNewSession: false` in the details means a page refresh rather than a fresh arrival; `resumed: "bfcache"` means the browser brought the page back from its back/forward cache | — |
 | _(no event)_ | App closing is not written to this table. It is recorded on the sitting itself, as `ended_at` and `end_reason` in `study_sessions` | — |
-| `heartbeat` | Emitted every 30 seconds. Details record whether the tab was visible, whether the window had focus, and whether there was any activity | Length of the interval |
+| `heartbeat` | Emitted every 30 seconds. Details record whether the tab was visible, whether the window had focus, whether there was any activity, which pane was active, where the mouse pointer was resting, and the layout (`split`, `editor_max`, `chat_max`, or `editor_only` in no-AI weeks) | Length of the interval |
 | `window_blur` | Participant moved to another application or window | How long they had been present |
 | `window_focus` | Participant came back | **How long they were away** |
 | `tab_hidden` / `tab_visible` | Switched to another browser tab and back | Time in the previous state |
-| `surface_focus` / `surface_blur` | Moved into or out of the editor or the chat box | Time spent in that pane |
+| `surface_focus` / `surface_blur` | Started or stopped using the editor or the chat pane. A pane counts as in use from the moment the participant clicks, scrolls, types, or selects text in it until they do one of those things in the other pane, so time spent reading a reply after sending a prompt counts as chat time. Details give what started it (`pointer`, `scroll`, `keyboard`, `focus`, `selection`, or `resume` after coming back to the window). The clock pauses while the window or tab is in the background | Time spent in that pane |
+| `chat_scroll` / `editor_scroll` | A 10-second window containing scrolling by the participant. Details give the distance scrolled up (re-reading) and down, whether they ended at the bottom, and for the chat which message was in the middle of the view at the end and how many messages there were. Scrolling the page does on its own, such as bringing a new reply into view, is counted in `programmatic` and never as attention | `value_num` = pixels scrolled |
+| `chat_select` | Participant highlighted text in a chat message. Details say whether it was in an AI reply or their own prompt | `value_num` = characters highlighted |
+| `layout_change` | Participant hid or restored one pane using the divider's arrow buttons or the keyboard shortcuts, or dragged a hidden pane back. Details give the new mode, the previous mode, and how it was done | `value_num` = chat share of the width (0 to 1) |
 | `typing_burst` | A 10-second window containing typing. Details break it into characters, backspaces, deletes, Enter presses, arrow keys, keyboard shortcuts (Ctrl/Cmd combinations such as undo or paste, which are not counted as characters), and the net change in length | `value_num` = number of keys pressed |
 | `chat_send` | A prompt was sent | `value_num` = prompt length in characters |
 | `chat_response` | A reply arrived | Time the participant waited |
@@ -116,7 +119,7 @@ number the event is about).
 | `submit` / `export_pdf` | Submitted or downloaded the assignment | Length of the document |
 | `qualtrics_continue` / `qualtrics_defer` | After submitting, went on to the questionnaire now or chose to do it later | — |
 | `connection_lost` / `connection_restored` | The draft stopped saving (details give the reason: the browser reported it was offline, a save got no answer or an error, or the memo could not be loaded) and when saving worked again. A red banner is shown to the participant in between | — |
-| `split_resize` | Dragged the divider between chat and editor | Proportion given to the chat |
+| `split_resize` | Dragged the divider between chat and editor, or reset it | Proportion given to the chat |
 | `viewport_resize` | Resized the window | — |
 | `sidebar_toggle` | Showed or hid the conversation list | — |
 
@@ -189,9 +192,11 @@ the service failed, is still stored with an empty `bot_response`.
 
 One row per participant per week, combining all of the above: condition,
 progress state, time open, time away, editor versus chat time, keystrokes in
-each, prompts sent / answered / stopped, average response wait, tokens, snapshot
-count, final word count, characters pasted in from the AI, external pastes, and
-submission time. This is the file to start from. Only participant/memo pairs
+each, time in each layout (both panes, editor only, chat only) and how often the
+layout was changed, chat scrolling and re-reading distance, text highlighted in
+replies, prompts sent / answered / stopped, average response wait, tokens,
+snapshot count, final word count, characters pasted in from the AI, external
+pastes, and submission time. This is the file to start from. Only participant/memo pairs
 with some activity appear, so averages are over people who did the memo.
 
 `v_session_summary` gives the same core measures per sitting.
@@ -202,7 +207,11 @@ with some activity appear, so averages are over people who did the memo.
 
 - Total time the system was open, per sitting and per week
 - Time away from the study window, as a count of episodes and total duration
-- Time with the editor focused versus the chat focused
+- Time using the editor versus the chat, where using the chat includes reading
+  replies, not only typing prompts
+- Time with one pane hidden and the other filling the window
+- How much a participant scrolled back through earlier replies, and how often
+  they highlighted text in a reply
 - Total keystrokes in the editor and in the chat, and how they were distributed
   across the session
 - Ratio of deletions to insertions, as a rough measure of revision

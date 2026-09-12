@@ -272,18 +272,30 @@ SELECT
       WHERE x.participant_id = s.participant_id
         AND x.assignment_id = s.assignment_id) AS system_ids,
 
-    CASE COALESCE(
-            (SELECT GROUP_CONCAT(DISTINCT x.system_id ORDER BY x.system_id)
-               FROM study_sessions x
-              WHERE x.participant_id = s.participant_id
-                AND x.assignment_id = s.assignment_id),
-            (SELECT a.system_id FROM assignments a
-              WHERE a.participant_id = s.participant_id
-                AND a.assignment_id = s.assignment_id LIMIT 1))
-        WHEN '2' THEN 'AI'
-        WHEN '1' THEN 'NoAI'
-        WHEN NULL THEN NULL
-        ELSE 'mixed'
+    -- A simple CASE cannot match NULL, so the "no condition recorded" case is
+    -- tested separately; otherwise it would read as 'mixed'.
+    CASE
+        WHEN COALESCE(
+                (SELECT GROUP_CONCAT(DISTINCT x.system_id ORDER BY x.system_id)
+                   FROM study_sessions x
+                  WHERE x.participant_id = s.participant_id
+                    AND x.assignment_id = s.assignment_id),
+                (SELECT a.system_id FROM assignments a
+                  WHERE a.participant_id = s.participant_id
+                    AND a.assignment_id = s.assignment_id LIMIT 1)) IS NULL
+            THEN NULL
+        ELSE CASE COALESCE(
+                (SELECT GROUP_CONCAT(DISTINCT x.system_id ORDER BY x.system_id)
+                   FROM study_sessions x
+                  WHERE x.participant_id = s.participant_id
+                    AND x.assignment_id = s.assignment_id),
+                (SELECT a.system_id FROM assignments a
+                  WHERE a.participant_id = s.participant_id
+                    AND a.assignment_id = s.assignment_id LIMIT 1))
+            WHEN '2' THEN 'AI'
+            WHEN '1' THEN 'NoAI'
+            ELSE 'mixed'
+        END
     END AS study_condition,
 
     -- Progress ------------------------------------------------------------

@@ -562,10 +562,20 @@ SELECT
       WHERE n.participant_id = s.participant_id
         AND n.assignment_id = s.assignment_id) AS snapshot_count,
 
+    -- The newest revision up to the moment of submission. Anything captured
+    -- later (a page reopened after submitting) is not the memo that was sent.
     (SELECT n.word_count
        FROM editor_snapshots n
       WHERE n.participant_id = s.participant_id
         AND n.assignment_id = s.assignment_id
+        AND (
+            (SELECT a.submitted_at FROM assignments a
+              WHERE a.participant_id = s.participant_id
+                AND a.assignment_id = s.assignment_id LIMIT 1) IS NULL
+            OR n.captured_at <= (SELECT a.submitted_at FROM assignments a
+                                  WHERE a.participant_id = s.participant_id
+                                    AND a.assignment_id = s.assignment_id LIMIT 1)
+        )
       ORDER BY n.captured_at DESC, n.id DESC
       LIMIT 1) AS final_word_count,
 

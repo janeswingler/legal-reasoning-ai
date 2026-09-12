@@ -27,6 +27,42 @@ const SEQ_STORAGE_KEY = `lrai_telemetrySeq:${config.studySessionId}`;
 
 const telemetryQueue = [];
 let sessionSeq = Number(sessionStorage.getItem(SEQ_STORAGE_KEY) || 0) || 0;
+
+// Events still queued when the page closes are parked in sessionStorage and
+// re-sent by the next load of the same sitting (a reload keeps sessionStorage;
+// closing the tab clears it). This is what saves the events of an offline
+// spell when the student reloads before the connection returns. Sequence
+// numbers already persist, so a re-sent event is ignored by the server rather
+// than counted twice.
+const PARKED_QUEUE_KEY = `lrai_telemetryParked:${config.studySessionId}`;
+
+function parkQueue(events) {
+    if (!events.length) {
+        return;
+    }
+    try {
+        const existing = JSON.parse(sessionStorage.getItem(PARKED_QUEUE_KEY) || "[]");
+        sessionStorage.setItem(PARKED_QUEUE_KEY, JSON.stringify(existing.concat(events)));
+    } catch {
+        // Quota or private mode: the events are lost, as they were before.
+    }
+}
+
+function restoreParkedQueue() {
+    try {
+        const parked = JSON.parse(sessionStorage.getItem(PARKED_QUEUE_KEY) || "[]");
+        sessionStorage.removeItem(PARKED_QUEUE_KEY);
+        if (!Array.isArray(parked)) {
+            return [];
+        }
+        // Only events from before this load; anything else is corrupt.
+        return parked.filter(
+            (event) => event && Number.isFinite(event.sessionSeq) && event.sessionSeq <= sessionSeq
+        );
+    } catch {
+        return [];
+    }
+}
 let flushTimer = null;
 let flushInFlight = false;
 let sessionClosed = false;
@@ -171,6 +207,14 @@ async function flushEvents() {
 }
 
 async function startTelemetrySession() {
+    // Events parked by a reload that happened while offline go first, so they
+    // reach the server ahead of anything this load records.
+    const parked = restoreParkedQueue();
+    if (parked.length) {
+        telemetryQueue.unshift(...parked);
+        scheduleFlush();
+    }
+
     try {
         await postJson("/api/telemetry/session/start", {
             ...identityPayload(),
@@ -206,10 +250,16 @@ function endTelemetrySession(reason) {
 
     // Whatever is still queued goes out in size-capped beacons: earlier chunks
     // to the events endpoint, the final chunk together with the close itself.
+    // The same events are also parked for the next load of this sitting: a
+    // beacon sent while offline is accepted by the browser and then silently
+    // dropped, and the browser's own offline flag is not reliable enough to
+    // decide. Duplicates are harmless because the server ignores a sequence
+    // number it has already stored.
     const chunks = [];
     while (telemetryQueue.length > 0) {
         chunks.push(takeBatch());
     }
+    parkQueue(chunks.flat());
     const lastChunk = chunks.pop() || [];
 
     for (const chunk of chunks) {

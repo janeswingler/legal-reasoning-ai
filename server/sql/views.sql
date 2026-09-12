@@ -63,6 +63,8 @@ SELECT
     CASE JSON_UNQUOTE(JSON_EXTRACT(e.event_props, '$.hadInput'))
         WHEN 'true' THEN 1 WHEN 'false' THEN 0 END AS had_input,
     NULLIF(JSON_UNQUOTE(JSON_EXTRACT(e.event_props, '$.surface')), 'null') AS active_surface,
+    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(e.event_props, '$.pointerSurface')), 'null') AS pointer_surface,
+    NULLIF(JSON_UNQUOTE(JSON_EXTRACT(e.event_props, '$.layout')), 'null') AS layout,
     e.client_ts,
     e.timestamp AS server_ts
 FROM system_interactions e
@@ -190,6 +192,44 @@ SELECT
         AND e.event_type = 'typing_burst'
         AND e.page = 'chat') AS chat_keystrokes,
 
+    -- Layout: time with both panes showing, or one hidden behind the divider.
+    (SELECT COALESCE(SUM(e.duration_ms), 0)
+       FROM system_interactions e
+      WHERE e.study_session_id = s.id
+        AND e.event_type = 'heartbeat'
+        AND JSON_UNQUOTE(JSON_EXTRACT(e.event_props, '$.layout')) = 'split') AS split_layout_ms,
+
+    (SELECT COALESCE(SUM(e.duration_ms), 0)
+       FROM system_interactions e
+      WHERE e.study_session_id = s.id
+        AND e.event_type = 'heartbeat'
+        AND JSON_UNQUOTE(JSON_EXTRACT(e.event_props, '$.layout')) = 'editor_max') AS editor_max_ms,
+
+    (SELECT COALESCE(SUM(e.duration_ms), 0)
+       FROM system_interactions e
+      WHERE e.study_session_id = s.id
+        AND e.event_type = 'heartbeat'
+        AND JSON_UNQUOTE(JSON_EXTRACT(e.event_props, '$.layout')) = 'chat_max') AS chat_max_ms,
+
+    -- Reading the chat: pixels scrolled by the student, upward (re-reading)
+    -- separately, and text highlighted in replies.
+    (SELECT COALESCE(SUM(e.value_num), 0)
+       FROM system_interactions e
+      WHERE e.study_session_id = s.id
+        AND e.event_type = 'chat_scroll') AS chat_scroll_px,
+
+    (SELECT COALESCE(SUM(
+                CAST(JSON_UNQUOTE(JSON_EXTRACT(e.event_props, '$.up')) AS UNSIGNED)
+            ), 0)
+       FROM system_interactions e
+      WHERE e.study_session_id = s.id
+        AND e.event_type = 'chat_scroll') AS chat_scroll_up_px,
+
+    (SELECT COUNT(*)
+       FROM system_interactions e
+      WHERE e.study_session_id = s.id
+        AND e.event_type = 'chat_select') AS chat_selections,
+
     (SELECT COUNT(*)
        FROM chat_exchanges x
       WHERE x.study_session_id = s.id) AS prompts_sent,
@@ -232,18 +272,30 @@ SELECT
       WHERE x.participant_id = s.participant_id
         AND x.assignment_id = s.assignment_id) AS system_ids,
 
-    CASE COALESCE(
-            (SELECT GROUP_CONCAT(DISTINCT x.system_id ORDER BY x.system_id)
-               FROM study_sessions x
-              WHERE x.participant_id = s.participant_id
-                AND x.assignment_id = s.assignment_id),
-            (SELECT a.system_id FROM assignments a
-              WHERE a.participant_id = s.participant_id
-                AND a.assignment_id = s.assignment_id LIMIT 1))
-        WHEN '2' THEN 'AI'
-        WHEN '1' THEN 'NoAI'
-        WHEN NULL THEN NULL
-        ELSE 'mixed'
+    -- A simple CASE cannot match NULL, so the "no condition recorded" case is
+    -- tested separately; otherwise it would read as 'mixed'.
+    CASE
+        WHEN COALESCE(
+                (SELECT GROUP_CONCAT(DISTINCT x.system_id ORDER BY x.system_id)
+                   FROM study_sessions x
+                  WHERE x.participant_id = s.participant_id
+                    AND x.assignment_id = s.assignment_id),
+                (SELECT a.system_id FROM assignments a
+                  WHERE a.participant_id = s.participant_id
+                    AND a.assignment_id = s.assignment_id LIMIT 1)) IS NULL
+            THEN NULL
+        ELSE CASE COALESCE(
+                (SELECT GROUP_CONCAT(DISTINCT x.system_id ORDER BY x.system_id)
+                   FROM study_sessions x
+                  WHERE x.participant_id = s.participant_id
+                    AND x.assignment_id = s.assignment_id),
+                (SELECT a.system_id FROM assignments a
+                  WHERE a.participant_id = s.participant_id
+                    AND a.assignment_id = s.assignment_id LIMIT 1))
+            WHEN '2' THEN 'AI'
+            WHEN '1' THEN 'NoAI'
+            ELSE 'mixed'
+        END
     END AS study_condition,
 
     -- Progress ------------------------------------------------------------
@@ -397,6 +449,58 @@ SELECT
         AND e.assignment_id = s.assignment_id
         AND e.event_type = 'typing_burst'
         AND e.page = 'editor') AS editor_typing_buckets,
+
+    -- Layout ---------------------------------------------------------------
+    -- Time with both panes showing, or with one hidden behind the divider.
+    (SELECT COALESCE(SUM(e.duration_ms), 0)
+       FROM system_interactions e
+      WHERE e.participant_id = s.participant_id
+        AND e.assignment_id = s.assignment_id
+        AND e.event_type = 'heartbeat'
+        AND JSON_UNQUOTE(JSON_EXTRACT(e.event_props, '$.layout')) = 'split') AS split_layout_ms,
+
+    (SELECT COALESCE(SUM(e.duration_ms), 0)
+       FROM system_interactions e
+      WHERE e.participant_id = s.participant_id
+        AND e.assignment_id = s.assignment_id
+        AND e.event_type = 'heartbeat'
+        AND JSON_UNQUOTE(JSON_EXTRACT(e.event_props, '$.layout')) = 'editor_max') AS editor_max_ms,
+
+    (SELECT COALESCE(SUM(e.duration_ms), 0)
+       FROM system_interactions e
+      WHERE e.participant_id = s.participant_id
+        AND e.assignment_id = s.assignment_id
+        AND e.event_type = 'heartbeat'
+        AND JSON_UNQUOTE(JSON_EXTRACT(e.event_props, '$.layout')) = 'chat_max') AS chat_max_ms,
+
+    (SELECT COUNT(*)
+       FROM system_interactions e
+      WHERE e.participant_id = s.participant_id
+        AND e.assignment_id = s.assignment_id
+        AND e.event_type = 'layout_change') AS layout_changes,
+
+    -- Reading the chat ----------------------------------------------------
+    -- Pixels the student scrolled in the chat, with upward (re-reading)
+    -- scrolling separately, and how often they highlighted text in a reply.
+    (SELECT COALESCE(SUM(e.value_num), 0)
+       FROM system_interactions e
+      WHERE e.participant_id = s.participant_id
+        AND e.assignment_id = s.assignment_id
+        AND e.event_type = 'chat_scroll') AS chat_scroll_px,
+
+    (SELECT COALESCE(SUM(
+                CAST(JSON_UNQUOTE(JSON_EXTRACT(e.event_props, '$.up')) AS UNSIGNED)
+            ), 0)
+       FROM system_interactions e
+      WHERE e.participant_id = s.participant_id
+        AND e.assignment_id = s.assignment_id
+        AND e.event_type = 'chat_scroll') AS chat_scroll_up_px,
+
+    (SELECT COUNT(*)
+       FROM system_interactions e
+      WHERE e.participant_id = s.participant_id
+        AND e.assignment_id = s.assignment_id
+        AND e.event_type = 'chat_select') AS chat_selections,
 
     -- AI use --------------------------------------------------------------
     (SELECT COUNT(*)

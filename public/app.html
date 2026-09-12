@@ -7,7 +7,7 @@
 
         <link rel="stylesheet" href="./css/variables.css?v=20260711v" />
         <link rel="stylesheet" href="./css/reset.css" />
-        <link rel="stylesheet" href="./css/layout.css?v=20260821d" />
+        <link rel="stylesheet" href="./css/layout.css?v=20260912a" />
         <link rel="stylesheet" href="./css/chat.css?v=20260821a" />
         <link rel="stylesheet" href="./css/notes.css?v=20260912a" />
         <link rel="stylesheet" href="./css/screen-gate.css?v=20260812a" />
@@ -183,8 +183,24 @@
                 aria-valuemax="70"
                 aria-valuenow="50"
                 tabindex="0"
-                title="Drag to resize. Double-click to reset."
-            ></div>
+                title="Drag to resize. Double-click to reset. Arrows hide one side."
+            >
+                <span class="app-split-handle__grip" aria-hidden="true"></span>
+                <div class="app-split-handle__controls">
+                    <button
+                        type="button"
+                        class="app-split-handle__btn"
+                        id="splitMaximizeEditor"
+                        aria-label="Hide chat, full-width editor (Ctrl+Shift+[)"
+                    ></button>
+                    <button
+                        type="button"
+                        class="app-split-handle__btn"
+                        id="splitMaximizeChat"
+                        aria-label="Hide editor, full-width chat (Ctrl+Shift+])"
+                    ></button>
+                </div>
+            </div>
 
             <section class="panel panel-notes" aria-label="Submission editor">
                 <div class="panel-notes__header">
@@ -429,11 +445,11 @@
         <script src="./js/pleading-editor/editor.js?v=20260812d"></script>
         <script src="./js/study-routing.js?v=20260909a"></script>
         <script src="./js/config.js?v=20260909a"></script>
-        <script src="./js/logging.js?v=20260908b"></script>
-        <script src="./js/split-pane.js?v=20260821a"></script>
+        <script src="./js/logging.js?v=20260912a"></script>
+        <script src="./js/split-pane.js?v=20260912a"></script>
         <script src="./js/chat.js?v=20260908b"></script>
         <script src="./js/notes.js?v=20260912a"></script>
         <!-- Last: attaches to the editor and chat once both exist. -->
-        <script src="./js/instrumentation.js?v=20260908b"></script>
+        <script src="./js/instrumentation.js?v=20260912a"></script>
     </body>
 </html>

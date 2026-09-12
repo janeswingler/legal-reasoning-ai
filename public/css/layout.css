@@ -49,10 +49,12 @@ body {
   min-height: 0;
 }
 
-/* Drag handle between the chat and the submission editor */
+/* Drag handle between the chat and the submission editor. Always visible as a
+   thin rail with a dotted grip and two arrow buttons, so students can find it
+   without hunting for a hidden hotspot. */
 .app-split-handle {
   position: relative;
-  width: 6px;
+  width: 14px;
   align-self: stretch;
   background: transparent;
   cursor: col-resize;
@@ -66,9 +68,10 @@ body {
   top: 0;
   bottom: 0;
   left: 50%;
-  width: 1.5px;
+  width: 2px;
   transform: translateX(-50%);
-  background: transparent;
+  border-radius: 2px;
+  background: var(--border);
   transition: background 0.15s ease;
 }
 
@@ -82,10 +85,84 @@ body.is-splitting .app-split-handle::before {
   outline: none;
 }
 
+/* Dotted grip: three dots at mid-height, like a window splitter. */
+.app-split-handle__grip {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 4px;
+  height: 22px;
+  transform: translate(-50%, calc(-50% - 44px));
+  border-radius: 2px;
+  background: radial-gradient(circle, var(--border-strong) 1.4px, transparent 1.6px) center / 4px 6px repeat-y;
+  pointer-events: none;
+}
+
+.app-split-handle:hover .app-split-handle__grip,
+body.is-splitting .app-split-handle__grip {
+  background-image: radial-gradient(circle, var(--text-muted) 1.4px, transparent 1.6px);
+}
+
+.app-split-handle__controls {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  cursor: default;
+}
+
+.app-split-handle__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  background: var(--bg-panel);
+  color: var(--text-muted);
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(28, 27, 25, 0.08);
+  transition: color 0.15s ease, border-color 0.15s ease, background 0.15s ease;
+}
+
+.app-split-handle__btn:hover,
+.app-split-handle__btn:focus-visible {
+  color: var(--text);
+  border-color: var(--text-muted);
+  background: var(--bg-inset);
+  outline: none;
+}
+
+.app-split-handle__btn[hidden] {
+  display: none;
+}
+
 /* Held on <body> so the resize cursor survives leaving the handle mid-drag. */
 body.is-splitting {
   cursor: col-resize;
   user-select: none;
+}
+
+/* One pane hidden: the divider stays at the edge so it can be brought back. */
+body.is-editor-max .panel-chat {
+  display: none;
+}
+
+body.is-editor-max .app-main {
+  grid-template-columns: auto minmax(0, 1fr);
+}
+
+body.is-chat-max .panel-notes {
+  display: none;
+}
+
+body.is-chat-max .app-main {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 
 /* Chat is open page canvas — not a card */

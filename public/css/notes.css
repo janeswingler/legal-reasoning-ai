@@ -257,6 +257,51 @@ body.is-notes-busy * {
   gap: 0.125rem;
 }
 
+/* Shown while the draft cannot be saved: the laptop is offline or the server
+   is not answering. Fixed to the top of the window so it is visible whichever
+   pane the student is working in, and whatever they have scrolled to. */
+.connection-warning {
+  position: fixed;
+  top: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10001;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  max-width: min(44rem, calc(100% - 2rem));
+  margin: 0;
+  padding: 0.6rem 1rem;
+  border: 1px solid #b23a2e;
+  border-top: 0;
+  border-radius: 0 0 10px 10px;
+  background: #fbe9e5;
+  color: #6f1d14;
+  font-family: var(--font-sans);
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  line-height: 1.35;
+  box-shadow: 0 6px 20px rgba(28, 27, 25, 0.16);
+}
+
+.connection-warning[hidden] {
+  display: none;
+}
+
+.connection-warning__icon {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  background: #b23a2e;
+  color: #ffffff;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .note-format-toolbar__group + .note-format-toolbar__group {
   padding-left: var(--space-2);
   border-left: 1px solid var(--border);

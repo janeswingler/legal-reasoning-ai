@@ -3,7 +3,7 @@
  *
  *   node scripts/smoke-telemetry.js [baseUrl]
  *
- * Uses dummy participant 20 on memo 5 (the API only accepts identities from
+ * Uses dummy participant 20020 on memo 1 (the API only accepts identities from
  * the study mapping) and refuses to run if that pair already has telemetry.
  * Writes and then removes its own rows, so it is safe to run against a
  * development database. It will not touch real participant data.
@@ -12,8 +12,10 @@ require("dotenv").config();
 const mysql = require("mysql2/promise");
 
 const BASE = process.argv[2] || "http://localhost:3000";
-const PARTICIPANT = "20";
-const ASSIGNMENT = "memo-05";
+const PARTICIPANT = "20020";
+// Memo 1 is the only memo open before the release dates in
+// server/data/memo-assigned-dates.json; the others are refused until then.
+const ASSIGNMENT = "memo-01";
 const SESSION = `sess-${Date.now()}`;
 const ORPHAN_SESSION = `sess-orphan-${Date.now()}`;
 const FORTY_DAYS_MS = 40 * 24 * 60 * 60 * 1000;

@@ -2,15 +2,19 @@
  * Lightweight API smoke test against a running server + initialized DB.
  * Usage: node scripts/smoke-mysql.js
  *
- * Uses dummy participant 20 on a memo in their AI condition (the API only
+ * Uses dummy participant 20020 on a memo in their AI condition (the API only
  * accepts identities from the study mapping) and removes what it created.
  */
 require("dotenv").config();
 const mysql = require("mysql2/promise");
 
 const BASE = process.env.SMOKE_BASE_URL || "http://localhost:3000";
-const PARTICIPANT = "20";
-const ASSIGNMENT = "memo-05";
+const PARTICIPANT = "20020";
+// Memo 1 is the only memo open before the release dates in
+// server/data/memo-assigned-dates.json; the others are refused until then.
+const ASSIGNMENT = "memo-01";
+// Same memo, a dummy participant in the NoAI condition for it.
+const NOAI_PARTICIPANT = "20001";
 
 async function req(method, path, body) {
     const response = await fetch(`${BASE}${path}`, {
@@ -96,10 +100,10 @@ async function main() {
             null,
             403
         );
-        // Participant 20's memo 6 is NoAI, so the chat API is closed for it.
+        // Participant 20001's memo 1 is NoAI, so the chat API is closed for it.
         await expectStatus(
             "GET",
-            `/api/chat/threads?participantID=${PARTICIPANT}&assignmentId=memo-06`,
+            `/api/chat/threads?participantID=${NOAI_PARTICIPANT}&assignmentId=${ASSIGNMENT}`,
             null,
             403
         );

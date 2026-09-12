@@ -17,6 +17,8 @@ const pleadingScrollSurfaceEl = document.getElementById("pleadingScrollSurface")
 
 const noteBusyStatus = document.getElementById("noteBusyStatus");
 const noteBusyStatusText = document.getElementById("noteBusyStatusText");
+const connectionWarning = document.getElementById("connectionWarning");
+const connectionWarningText = document.getElementById("connectionWarningText");
 
 const pleadingSpec = PleadingLayoutSpec.default();
 let pleadingEditor = null;
@@ -32,6 +34,21 @@ let currentVersion = null;
 // Mirrors assignments.submitted_at / questionnaire_completed_at on the server,
 // which is the only durable record of how far through the assignment they are.
 let assignmentState = "writing";
+// True from the first edit after a successful save until the next one lands.
+// Drives the "unsaved changes" warning when the tab is closed.
+let hasUnsavedChanges = false;
+// True while the last save attempt failed (offline, or server not answering).
+// Cleared only by a save that succeeds.
+let lastSaveFailed = false;
+let saveRetryTimer = null;
+
+const SAVE_RETRY_INTERVAL_MS = 10000;
+const OFFLINE_WARNING_TEXT =
+    "You are offline. Changes you make may be lost. Check your internet connection.";
+const SAVE_FAILED_WARNING_TEXT =
+    "Your work is not being saved. Check your internet connection. If it is working, reload this page.";
+const LOAD_FAILED_WARNING_TEXT =
+    "Your memo could not be loaded. Check your internet connection and reload this page.";
 let lastPointer = {
     x: Math.round(window.innerWidth / 2),
     y: Math.round(window.innerHeight / 2),
@@ -40,6 +57,145 @@ let lastPointer = {
 function setSaveStatus(_text) {
     // Autosave / load status stays quiet; busy work uses setBusyStatus.
 }
+
+// ------------------------------------------------------------ connection
+
+function showConnectionWarning(text) {
+    if (!connectionWarning) {
+        return;
+    }
+    if (connectionWarningText) {
+        connectionWarningText.textContent = text;
+    }
+    connectionWarning.hidden = false;
+}
+
+function hideConnectionWarning() {
+    if (connectionWarning) {
+        connectionWarning.hidden = true;
+    }
+}
+
+function isBrowserOffline() {
+    return typeof navigator !== "undefined" && navigator.onLine === false;
+}
+
+/**
+ * The browser's own offline flag is the clearest signal, so it wins; a failed
+ * save while the browser thinks it is online gets the broader message.
+ */
+function refreshConnectionWarning() {
+    if (isBrowserOffline()) {
+        showConnectionWarning(OFFLINE_WARNING_TEXT);
+        return;
+    }
+    if (lastSaveFailed) {
+        showConnectionWarning(SAVE_FAILED_WARNING_TEXT);
+        return;
+    }
+    hideConnectionWarning();
+}
+
+/**
+ * A student who stops typing while offline would otherwise never trigger
+ * another save, so keep trying in the background until one gets through.
+ */
+function startSaveRetry() {
+    if (saveRetryTimer !== null) {
+        return;
+    }
+    saveRetryTimer = setInterval(() => {
+        if (!lastSaveFailed || isWritingLocked() || saveBlocked) {
+            stopSaveRetry();
+            return;
+        }
+        saveCurrentNote().catch(() => {});
+    }, SAVE_RETRY_INTERVAL_MS);
+}
+
+function stopSaveRetry() {
+    if (saveRetryTimer !== null) {
+        clearInterval(saveRetryTimer);
+        saveRetryTimer = null;
+    }
+}
+
+function markSaveFailed(reason) {
+    const firstFailure = !lastSaveFailed;
+    lastSaveFailed = true;
+    refreshConnectionWarning();
+    startSaveRetry();
+
+    if (firstFailure) {
+        recordQuietly(() =>
+            logEvent({
+                eventType: "connection_lost",
+                elementName: "autosave",
+                page: "assignment",
+                eventProps: { reason, browserOffline: isBrowserOffline() },
+            })
+        );
+    }
+}
+
+function markSaveSucceeded() {
+    const wasFailing = lastSaveFailed;
+    lastSaveFailed = false;
+    hasUnsavedChanges = false;
+    stopSaveRetry();
+    refreshConnectionWarning();
+
+    if (wasFailing) {
+        recordQuietly(() =>
+            logEvent({
+                eventType: "connection_restored",
+                elementName: "autosave",
+                page: "assignment",
+            })
+        );
+    }
+}
+
+window.addEventListener("offline", () => {
+    refreshConnectionWarning();
+    recordQuietly(() =>
+        logEvent({
+            eventType: "connection_lost",
+            elementName: "browser",
+            page: "window",
+            eventProps: { reason: "browser_offline", browserOffline: true },
+        })
+    );
+});
+
+window.addEventListener("online", () => {
+    recordQuietly(() =>
+        logEvent({
+            eventType: "connection_restored",
+            elementName: "browser",
+            page: "window",
+        })
+    );
+    // Back online: push whatever is waiting rather than wait for the next
+    // keystroke. The warning clears once that save succeeds.
+    if (hasUnsavedChanges || lastSaveFailed) {
+        saveCurrentNote().catch(() => {});
+    } else {
+        refreshConnectionWarning();
+    }
+});
+
+// Closing the tab with a failed or pending save would throw the work away.
+window.addEventListener("beforeunload", (event) => {
+    if (isWritingLocked()) {
+        return;
+    }
+    if (hasUnsavedChanges || lastSaveFailed || saveInFlight) {
+        event.preventDefault();
+        // Older browsers need a non-empty value to show the prompt.
+        event.returnValue = "";
+    }
+});
 
 // The download control is commented out of app.html, so every export button
 // touch has to tolerate a missing element.
@@ -225,11 +381,19 @@ async function saveCurrentNote() {
             expectedVersion: currentVersion,
         };
 
-        const response = await fetch("/api/assignments/current", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-        });
+        let response;
+        try {
+            response = await fetch("/api/assignments/current", {
+                method: "PUT",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(payload),
+            });
+        } catch (error) {
+            // No response at all: the laptop is offline or the server is down.
+            markSaveFailed("network_error");
+            setSaveStatus("Save failed");
+            return;
+        }
 
         if (response.status === 409) {
             const result = await response.json().catch(() => ({}));
@@ -255,6 +419,7 @@ async function saveCurrentNote() {
         }
 
         if (!response.ok) {
+            markSaveFailed(`http_${response.status}`);
             setSaveStatus("Save failed");
             return;
         }
@@ -263,6 +428,7 @@ async function saveCurrentNote() {
         if (typeof result.version === "number") {
             currentVersion = result.version;
         }
+        markSaveSucceeded();
         setSaveStatus("Saved");
     } finally {
         saveInFlight = false;
@@ -279,9 +445,14 @@ function scheduleSave() {
     // formatting, and list operations.
     window.markEditorDirty?.();
     invalidatePdfCache();
+    hasUnsavedChanges = true;
     clearTimeout(saveTimer);
     setSaveStatus("Saving…");
-    saveTimer = setTimeout(saveCurrentNote, 800);
+    saveTimer = setTimeout(() => {
+        saveCurrentNote().catch((error) => {
+            console.error("Autosave error:", error);
+        });
+    }, 800);
 }
 
 function updateToolbarState() {
@@ -749,6 +920,26 @@ function bindToolbar() {
 // Copy and paste are captured with their text by instrumentation.js, which
 // records the content itself rather than only the location.
 
+/**
+ * The saved draft never arrived (offline at page open, or the server did not
+ * answer). Anything typed now would be saved over the real draft once the
+ * connection came back, so the editor is locked until the page is reloaded.
+ */
+function handleLoadFailure() {
+    setSaveStatus("Load failed");
+    saveBlocked = true;
+    lockWriting();
+    showConnectionWarning(LOAD_FAILED_WARNING_TEXT);
+    recordQuietly(() =>
+        logEvent({
+            eventType: "connection_lost",
+            elementName: "memo-load",
+            page: "assignment",
+            eventProps: { reason: "load_failed", browserOffline: isBrowserOffline() },
+        })
+    );
+}
+
 async function initNote() {
     pleadingEditor = new PleadingEditor({
         spec: pleadingSpec,
@@ -793,9 +984,9 @@ async function initNote() {
             return;
         }
 
-        setSaveStatus("Load failed");
+        handleLoadFailure();
     } catch (error) {
-        setSaveStatus("Load failed");
+        handleLoadFailure();
     } finally {
         isInitializing = false;
         // Baseline revision for this sitting. Deduped server-side, so reopening
@@ -805,5 +996,6 @@ async function initNote() {
 }
 
 initNote();
-
+// A page opened while already offline should say so before the first save.
+refreshConnectionWarning();
 

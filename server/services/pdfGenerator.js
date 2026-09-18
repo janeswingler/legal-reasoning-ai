@@ -43,6 +43,14 @@ let pagePromise = null;
 let bootstrapDir = null;
 let fontFaceCss = null;
 let renderQueue = Promise.resolve();
+const crashedPages = new WeakSet();
+// page -> promise that rejects when that page's renderer crashes, so a render
+// already in flight fails at once instead of waiting for the timeout.
+const crashSignals = new WeakMap();
+
+// A render on a healthy page takes well under a second. One that runs this
+// long is talking to a page that has stopped answering.
+const RENDER_TIMEOUT_MS = 45000;
 
 function getFontDir() {
     const configured = process.env.PLEADING_FONT_DIR;
@@ -201,7 +209,7 @@ function resolveChromeExecutable() {
 
 async function getBrowser() {
     if (!browserPromise) {
-        browserPromise = loadPuppeteer()
+        const launching = loadPuppeteer()
             .then((puppeteer) => {
                 const executablePath = resolveChromeExecutable();
                 return puppeteer.launch({
@@ -215,11 +223,26 @@ async function getBrowser() {
                     ],
                 });
             })
+            .then((browser) => {
+                // If Chrome itself exits, forget it so the next render relaunches
+                // instead of talking to a dead process until the server restarts.
+                browser.on("disconnected", () => {
+                    if (browserPromise === launching) {
+                        console.error("[pdf] Chrome exited; it will be relaunched on the next render");
+                        browserPromise = null;
+                        pagePromise = null;
+                    }
+                });
+                return browser;
+            })
             .catch((error) => {
                 // Do not cache a failed launch, or every later request inherits it.
-                browserPromise = null;
+                if (browserPromise === launching) {
+                    browserPromise = null;
+                }
                 throw error;
             });
+        browserPromise = launching;
     }
 
     return browserPromise;
@@ -239,6 +262,21 @@ async function createPage() {
             return;
         }
         request.abort();
+    });
+
+    // A crashed rendering process does not close the tab. Puppeteer reports
+    // it here, and a call on the page afterwards can hang rather than throw.
+    let signalCrash;
+    const crashed = new Promise((_, reject) => {
+        signalCrash = reject;
+    });
+    crashed.catch(() => {}); // only observed while a render is in flight
+    crashSignals.set(page, crashed);
+
+    page.on("error", (error) => {
+        console.error(`[pdf] warm page crashed (${error.message}); it will be rebuilt`);
+        crashedPages.add(page);
+        signalCrash(new Error(`Page crashed: ${error.message}`));
     });
 
     bootstrapDir = fs.mkdtempSync(path.join(os.tmpdir(), "pleading-pdf-"));
@@ -265,17 +303,68 @@ async function getPage() {
     const page = await pagePromise;
 
     // Recover if the tab died between renders.
-    if (page.isClosed()) {
-        pagePromise = null;
+    if (!isPageUsable(page)) {
+        await discardPage(page);
         return getPage();
     }
 
     return page;
 }
 
-async function renderOnWarmPage(bodyHtml) {
-    const page = await getPage();
+/**
+ * A page can stop working without ever being "closed": Chrome drops the tab's
+ * rendering process after days of idling (or under memory pressure) and the
+ * tab is left hollow. That is when isClosed() still says false but the main
+ * frame is detached, and every render fails with "Attempted to use detached
+ * Frame" until the process restarts.
+ */
+function isPageUsable(page) {
+    return (
+        !page.isClosed() &&
+        page.browser().connected &&
+        !page.mainFrame().detached &&
+        !crashedPages.has(page)
+    );
+}
 
+function isDeadPageError(error) {
+    return /detached Frame|Target closed|Session closed|Page crashed|render timed out/i.test(
+        String(error?.message || "")
+    );
+}
+
+function withRenderTimeout(page, promise) {
+    let timer;
+    const timeout = new Promise((_, reject) => {
+        timer = setTimeout(
+            () => reject(new Error(`PDF render timed out after ${RENDER_TIMEOUT_MS}ms`)),
+            RENDER_TIMEOUT_MS
+        );
+    });
+    const racers = [promise, timeout];
+    if (crashSignals.has(page)) {
+        racers.push(crashSignals.get(page));
+    }
+    return Promise.race(racers).finally(() => clearTimeout(timer));
+}
+
+async function discardPage(page) {
+    pagePromise = null;
+
+    if (!page.browser().connected) {
+        // Whole browser is gone; next getPage() relaunches it.
+        browserPromise = null;
+        return;
+    }
+
+    // Closing a crashed tab can itself stall; don't let it hold up the retry.
+    await Promise.race([
+        page.close().catch(() => {}),
+        new Promise((resolve) => setTimeout(resolve, 5000)),
+    ]);
+}
+
+async function renderOnPage(page, bodyHtml) {
     try {
         await page.evaluate(
             (html, contentId) => {
@@ -296,6 +385,25 @@ async function renderOnWarmPage(bodyHtml) {
                 document.getElementById(contentId).innerHTML = "";
             }, CONTENT_ID)
             .catch(() => {});
+    }
+}
+
+async function renderOnWarmPage(bodyHtml) {
+    const page = await getPage();
+
+    try {
+        return await withRenderTimeout(page, renderOnPage(page, bodyHtml));
+    } catch (error) {
+        if (!isDeadPageError(error)) {
+            throw error;
+        }
+
+        // The page died between the check above and the render, or during it.
+        // Rebuild it and try once more; a second failure is a real error.
+        console.error(`[pdf] warm page is dead (${error.message}); rebuilding it`);
+        await discardPage(page);
+        const freshPage = await getPage();
+        return withRenderTimeout(freshPage, renderOnPage(freshPage, bodyHtml));
     }
 }
 

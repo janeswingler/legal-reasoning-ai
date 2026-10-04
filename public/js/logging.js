@@ -16,7 +16,16 @@ const MAX_BATCH_BYTES = 40000;
 
 // If the network is down for a long stretch, stop the queue growing without
 // bound. Oldest events are dropped first so the recent picture stays intact.
-const MAX_QUEUE_LENGTH = 500;
+// 2000 events is several hours of active writing (under 1 MB), and still fits
+// comfortably in sessionStorage when the queue is parked on page close.
+const MAX_QUEUE_LENGTH = 2000;
+
+// A request that never gets a reply (a connection dropped silently by wifi or
+// a router) would otherwise stay pending for hours. Event batches go out one
+// at a time, so one stuck request froze all telemetry for a tab while the
+// queue overflowed - 879 events lost in one sitting. Giving up after this long
+// turns a stuck request into an ordinary failure that is retried.
+const REQUEST_TIMEOUT_MS = 20000;
 
 // The sequence counter must keep climbing across reloads. A reload keeps the
 // same sessionStorage session id, so restarting at 1 would collide with the
@@ -81,12 +90,17 @@ function identityPayload() {
 }
 
 function postJson(path, payload) {
+    // A stuck keepalive request also holds the browser's 64 KiB keepalive
+    // budget, so the timeout applies to every telemetry post, not just events.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
     return fetch(path, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
         keepalive: true,
-    });
+        signal: controller.signal,
+    }).finally(() => clearTimeout(timer));
 }
 
 /**

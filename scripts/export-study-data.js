@@ -83,9 +83,10 @@ function toCsvValue(value) {
 
 function escapeCsv(text) {
     // Strip control characters that break naive CSV readers, keeping the text
-    // itself intact for qualitative coding.
+    // itself intact for qualitative coding. A bare carriage return (pasted in
+    // from Word or a PDF) also has to force quoting, or readers split the row.
     const cleaned = text.replace(/\r\n/g, "\n");
-    if (/[",\n]/.test(cleaned)) {
+    if (/[",\n\r]/.test(cleaned)) {
         return `"${cleaned.replace(/"/g, '""')}"`;
     }
     return cleaned;
